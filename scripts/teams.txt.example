@@ -1,0 +1,6 @@
+# Format: slug;url
+# slug   -> wird zum Dateinamen slug.ics, nur [a-z0-9_-]
+# url    -> vollständiger fussball.de-Link (Mannschaft oder Verein)
+#
+# Beispiel:
+# tsv_musterstadt_1;https://www.fussball.de/mannschaft/tsv-musterstadt-1-...
