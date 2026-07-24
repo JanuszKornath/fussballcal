@@ -1,29 +1,32 @@
 # vendor/ — eingebettete Drittanbieter-Tools
 
-Hier liegt SpielplanOffline **fest im Repo** (vendored). Die Installation
-kopiert das Tool von hier nach `/srv/spielplanoffline/` — es wird zur
-Installations- oder Laufzeit **nichts** von astro.ru.nl oder anderen externen
-Quellen nachgeladen.
+Hier liegt SpielplanOffline (V2.9) **fest im Repo** (vendored). Die
+Installation kopiert das Tool von hier nach `/srv/spielplanoffline/` — es wird
+zur Installations- oder Laufzeit **nichts** von astro.ru.nl oder anderen
+externen Quellen nachgeladen.
 
-## Einmaliges Einchecken von SpielplanOffline
+## Auf eine neuere Version aktualisieren
 
-Falls `vendor/SpielplanOffline/` noch fehlt (das Archiv konnte aus dieser
-Build-Umgebung heraus nicht geladen werden, astro.ru.nl ist dort gesperrt),
-einmalig auf einem Rechner mit Internetzugang:
+Fussball.de ändert Layout/Font-Obfuskation regelmäßig; wenn die ICS-Erzeugung
+irgendwann fehlschlägt, kann eine neuere SpielplanOffline-Version nötig sein.
+Update auf einem Rechner mit Internetzugang:
 
 ```bash
 wget https://www.astro.ru.nl/~falcke/fussball2csv/SpielplanOffline.tar
+rm -rf vendor/SpielplanOffline
 tar xf SpielplanOffline.tar -C vendor/   # -> vendor/SpielplanOffline/
+rm -f vendor/SpielplanOffline/._*        # macOS-Metadaten aus dem Tar entfernen
 chmod +x vendor/SpielplanOffline/SpielplanOffline.sh
 git add vendor/SpielplanOffline
-git commit -m "SpielplanOffline V2.9 vendoren"
+git commit -m "SpielplanOffline auf V<x.y> aktualisieren"
 ```
 
-Danach ist das Tool dauerhaft Teil dieses Repos und jede Installation kommt
-ohne Internetzugriff auf astro.ru.nl aus.
+Danach auf dem Server neu ausrollen (siehe Installations-Abschnitt im
+Haupt-README) und prüfen, ob die `-var`-Aufrufkonvention von `update_all.sh`
+noch zur neuen Version passt.
 
 ## Lizenzhinweis
 
 SpielplanOffline ist "thanksware" von H. Falcke (h.falcke@astro.ru.nl) für
-private/Vereins-Nutzung. Vor dem Einchecken in ein **öffentliches** Repo bzw.
-vor Weiterverbreitung ggf. kurz beim Autor nachfragen.
+private/Vereins-Nutzung. Vor Weiterverbreitung in einem **öffentlichen** Repo
+ggf. kurz beim Autor nachfragen.
