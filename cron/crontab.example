@@ -1,2 +1,2 @@
 # Alle 6 Stunden alle Kalender aktualisieren
-0 */6 * * * /opt/spielplanoffline/update_all.sh
+0 */6 * * * /srv/spielplanoffline/update_all.sh

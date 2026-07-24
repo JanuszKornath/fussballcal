@@ -18,7 +18,7 @@
 
 declare(strict_types=1);
 
-const CONFIG_FILE = '/opt/spielplanoffline/teams.txt';
+const CONFIG_FILE = '/srv/spielplanoffline/teams.txt';
 const MAX_TEAMS = 200; // simple Obergrenze gegen Missbrauch
 
 function respond(string $message, bool $ok): void
