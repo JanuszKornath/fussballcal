@@ -1,0 +1,3 @@
+{print}
+/BEGIN:VEVENT/{print "METHOD:CANCEL"; print "STATUS:CANCELLED"}
+
