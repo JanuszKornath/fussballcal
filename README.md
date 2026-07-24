@@ -45,8 +45,8 @@ verschoben und via nginx als `text/calendar` ausgeliefert wird.
 ## Installation
 
 Die Installation erfolgt komplett aus diesem Repo — es wird nichts aus dem
-Internet nachgeladen. Voraussetzung: `vendor/SpielplanOffline/` ist eingecheckt
-(einmaliger Schritt, siehe `vendor/README.md`).
+Internet nachgeladen. SpielplanOffline (V2.9) liegt fertig eingecheckt unter
+`vendor/SpielplanOffline/` (Details und Update-Anleitung: `vendor/README.md`).
 
 ```bash
 sudo apt update
@@ -104,9 +104,9 @@ dieser nginx-vhost dient nur als internes Backend im LXC-Container (Port 80).
 
 - [x] Aufrufkonvention von SpielplanOffline gegen das Tar-Archiv (V2.9) verifiziert
       und `update_all.sh` darauf umgestellt (`-var`-Parameterdatei, `STYLE=ICS`).
-- [ ] `vendor/SpielplanOffline/` einmalig einchecken (siehe `vendor/README.md`;
-      aus der Build-Umgebung heraus war astro.ru.nl gesperrt, der Download muss
-      daher einmalig von einem Rechner mit Internetzugang erfolgen).
+- [x] `vendor/SpielplanOffline/` (V2.9) eingecheckt — das Repo ist damit
+      self-contained, Installation und Betrieb laden nichts mehr von
+      astro.ru.nl nach.
 - [ ] End-to-End-Testlauf auf dem Debian-Server durchführen (in der Build-Umgebung
       ist fussball.de/astro.ru.nl gesperrt, ein Live-OCR-Lauf war dort nicht
       möglich). Fussball.de ändert sein Layout/Font-Obfuskation regelmäßig – bei
