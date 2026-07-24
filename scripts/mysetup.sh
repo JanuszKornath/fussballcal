@@ -4,7 +4,7 @@
 # Datei im Programmverzeichnis liegt. Sie ersetzt setup.sh vollständig, muss
 # also alle benötigten Variablen definieren.
 #
-# Diese Datei nach /opt/spielplanoffline/SpielplanOffline/mysetup.sh kopieren.
+# Diese Datei nach /srv/spielplanoffline/SpielplanOffline/mysetup.sh kopieren.
 
 #------------------------------------------------------------------------
 # Arbeits- und Ausgabeverzeichnisse

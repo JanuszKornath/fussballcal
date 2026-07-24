@@ -19,8 +19,8 @@ set -euo pipefail
 
 # Verzeichnis mit SpielplanOffline.sh (im Tar liegt alles im Unterordner
 # SpielplanOffline/). Hier liegt auch mysetup.sh (Linux-Overrides).
-TOOL_DIR="${SPO_TOOL_DIR:-/opt/spielplanoffline/SpielplanOffline}"
-CONFIG="${SPO_CONFIG:-/opt/spielplanoffline/teams.txt}"
+TOOL_DIR="${SPO_TOOL_DIR:-/srv/spielplanoffline/SpielplanOffline}"
+CONFIG="${SPO_CONFIG:-/srv/spielplanoffline/teams.txt}"
 OUTDIR="${SPO_OUTDIR:-/var/www/fussballcal/ics}"
 LOCKFILE="${SPO_LOCK:-/tmp/fussballcal_update_$(id -u).lock}"
 LOG="${SPO_LOG:-/var/log/spielplanoffline.log}"
@@ -28,7 +28,7 @@ LOG="${SPO_LOG:-/var/log/spielplanoffline.log}"
 # Arbeits-/Cache-Verzeichnis. SpielplanOffline legt unter $HOME/SpielplanOffline
 # seine tmp/Fonts/Output-Ordner an (ROOTDIR=$HOME). Wir setzen HOME bewusst auf
 # einen definierten, beschreibbaren Pfad, damit das unabhängig vom Cron-User ist.
-export HOME="${SPO_HOME:-/opt/spielplanoffline/work}"
+export HOME="${SPO_HOME:-/srv/spielplanoffline/work}"
 
 # Zeitfenster, in dem Spiele in den Kalender aufgenommen werden.
 STARTDATE="${SPO_START:-$(date -d '-2 months' +%F)}"
