@@ -9,6 +9,11 @@ diesem Repo**. Installation und Betrieb laden nichts von astro.ru.nl oder
 anderen externen Quellen nach — alles Nötige ist Teil dieses Repos
 (siehe `vendor/README.md`).
 
+> Kurz gesagt: Vereins-/Mannschaftslinks werden in `teams.txt` auf dem Server
+> eingetragen (oder per Webformular), abonnierbar ist das Ergebnis unter
+> `webcal://<host>/ics/<slug>.ics`. Details im Abschnitt
+> [Benutzung](#benutzung).
+
 ## Aufbau
 
 ```
@@ -18,9 +23,11 @@ fussballcal/
 ├── scripts/
 │   ├── update_all.sh       # Cron-Wrapper: liest teams.txt, ruft SpielplanOffline auf
 │   ├── mysetup.sh          # Linux-Overrides für SpielplanOffline (Locale, kein "open")
-│   └── teams.txt.example   # Beispiel-Konfig (slug;url)
+│   └── teams.txt.example   # Vorlage für die Team-Liste (slug;url) -> wird bei der
+│                           # Installation nach /srv/spielplanoffline/teams.txt kopiert
 ├── web/
-│   └── add_team.php        # Formular zum Hinzufügen neuer Teams
+│   └── add_team.php        # Formular zum Hinzufügen neuer Teams +
+│                           # Übersicht aller Kalenderlinks
 ├── nginx/
 │   └── fussballcal.conf    # nginx vhost, inkl. text/calendar MIME-Type
 └── cron/
@@ -99,6 +106,95 @@ Pfade lassen sich per Umgebungsvariablen überschreiben (`SPO_TOOL_DIR`,
 
 TLS-Terminierung und Domain-Routing übernimmt euer zentraler Reverse Proxy;
 dieser nginx-vhost dient nur als internes Backend im LXC-Container (Port 80).
+
+## Benutzung
+
+### 1. Den fussball.de-Link heraussuchen
+
+Auf [fussball.de](https://www.fussball.de/) die Mannschaft oder den Verein
+suchen, deren Seite öffnen und die Adresse aus der Adresszeile des Browsers
+kopieren. Unterstützt werden drei Link-Typen:
+
+| Link-Typ | Beispiel | Ergebnis |
+|---|---|---|
+| Mannschaft | `https://www.fussball.de/mannschaft/<name>/-/saison/2526/team-id/<ID>` | Spielplan genau dieser Mannschaft |
+| Verein | `https://www.fussball.de/verein/<name>/-/id/<ID>` | Spielplan **aller** Mannschaften des Vereins |
+| Staffel | `https://www.fussball.de/spieltag/<name>/-/staffel/<ID>` | kompletter Spielplan der Staffel/Liga |
+
+Der `#!/...`-Teil am Ende darf drin bleiben. Andere fussball.de-Seiten
+(Startseite, Tabellen, Suchergebnisse) funktionieren nicht.
+
+### 2. Den Link eintragen
+
+Es gibt zwei Wege — beide schreiben in dieselbe Datei
+`/srv/spielplanoffline/teams.txt` auf dem Server:
+
+**a) Per Webformular** (der bequeme Weg): `http://<host>/` im Browser öffnen
+(`add_team.php`), Link und Kurznamen eintragen, absenden. Das Formular
+akzeptiert nur `https://www.fussball.de/`-Links.
+
+**b) Direkt in der Datei** (z.B. für viele Teams auf einmal):
+
+```bash
+sudo nano /srv/spielplanoffline/teams.txt
+```
+
+Eine Zeile pro Kalender, Format `slug;url`:
+
+```
+# slug;url   — Zeilen mit # und Leerzeilen werden ignoriert
+tsv_musterstadt_1;https://www.fussball.de/mannschaft/tsv-musterstadt-1-.../team-id/011MI...
+sv_beispiel_verein;https://www.fussball.de/verein/sv-beispiel/-/id/00ES...
+```
+
+Der **slug** ist frei wählbar, darf aber nur `a-z`, `0-9`, `_` und `-`
+enthalten (Großbuchstaben und Umlaute werden abgelehnt) — er wird zum
+Dateinamen des Kalenders. `scripts/teams.txt.example` im Repo ist nur die
+Vorlage; die aktive Konfiguration liegt unter `/srv/spielplanoffline/`
+(überschreibbar per `SPO_CONFIG`).
+
+### 3. Den Kalenderlink abrufen
+
+Der Cron-Job läuft alle 6 Stunden (`cron/crontab.example`). Danach existiert
+pro Zeile eine ICS-Datei, die unter folgender Adresse abonnierbar ist:
+
+```
+webcal://<host>/ics/<slug>.ics      # zum Klicken/Abonnieren
+https://<host>/ics/<slug>.ics       # dieselbe Datei zum Herunterladen
+```
+
+Für das Beispiel oben also `webcal://<host>/ics/tsv_musterstadt_1.ics`.
+
+**Alle Links auf einen Blick** listet die Startseite `http://<host>/`
+(`add_team.php`) unterhalb des Formulars auf — mit „Abonnieren"-Link und dem
+Zeitpunkt der letzten Aktualisierung. Auf dem Server direkt:
+
+```bash
+ls -l /var/www/fussballcal/ics/
+```
+
+Abonnieren in den gängigen Kalendern:
+
+- **iOS / macOS**: `webcal://`-Link antippen/anklicken — Kalender öffnet sich
+  und fragt nach dem Abo.
+- **Google Kalender**: *Weitere Kalender → Per URL → `https://…/ics/<slug>.ics`*
+  (Google aktualisiert Abos nur alle paar Stunden bis einmal täglich).
+- **Outlook / Thunderbird**: Kalender abonnieren → die `https://`-Adresse
+  einfügen.
+
+Wichtig: Nicht die Datei herunterladen und importieren — dann bleibt der
+Kalender auf dem Stand des Downloads. Nur ein *Abo* der URL aktualisiert sich
+selbst.
+
+Wenn ein Link nicht funktioniert, hilft ein Blick ins Log:
+
+```bash
+sudo /srv/spielplanoffline/update_all.sh   # Lauf sofort anstoßen
+tail -n 40 /var/log/spielplanoffline.log
+```
+
+Ungültige Zeilen (falscher Slug, Nicht-fussball.de-URL) werden dort mit
+Begründung protokolliert und übersprungen.
 
 ## Offene Punkte (TODO)
 
