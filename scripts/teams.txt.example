@@ -1,6 +1,18 @@
-# Format: slug;url
-# slug   -> wird zum Dateinamen slug.ics, nur [a-z0-9_-]
-# url    -> vollständiger fussball.de-Link (Mannschaft oder Verein)
+# Team-Liste für update_all.sh — aktive Kopie liegt unter
+# /srv/spielplanoffline/teams.txt (Pfad überschreibbar per $SPO_CONFIG).
 #
-# Beispiel:
-# tsv_musterstadt_1;https://www.fussball.de/mannschaft/tsv-musterstadt-1-...
+# Eine Zeile pro Kalender, Format: slug;url
+#   slug -> wird zum Dateinamen slug.ics und damit Teil des Abo-Links
+#           webcal://<host>/ics/<slug>.ics — erlaubt sind nur [a-z0-9_-]
+#   url  -> vollständiger fussball.de-Link, aus der Adresszeile des Browsers
+#           kopiert. Unterstützt werden Mannschafts-, Vereins- und
+#           Staffelseiten:
+#             https://www.fussball.de/mannschaft/.../team-id/<ID>
+#             https://www.fussball.de/verein/.../-/id/<ID>
+#             https://www.fussball.de/spieltag/.../staffel/<ID>
+#
+# Leerzeilen und Zeilen mit # werden ignoriert.
+#
+# Beispiele:
+# tsv_musterstadt_1;https://www.fussball.de/mannschaft/tsv-musterstadt-1-.../team-id/011MI...
+# sv_beispiel_verein;https://www.fussball.de/verein/sv-beispiel/-/id/00ES...
