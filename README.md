@@ -100,6 +100,10 @@ sudo touch /var/log/spielplanoffline.log
 sudo cp web/add_team.php /var/www/fussballcal/
 sudo cp nginx/fussballcal.conf /etc/nginx/sites-available/
 sudo ln -s /etc/nginx/sites-available/fussballcal.conf /etc/nginx/sites-enabled/
+# Debians mitgelieferte Default-Site entfernen – sie ist der default_server auf
+# Port 80 und liefert sonst beim Zugriff über die Container-IP die
+# nginx-Welcome-Page statt fussballcal aus (Details siehe unten).
+sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl reload nginx
 
 sudo crontab -e   # Inhalt aus cron/crontab.example übernehmen
@@ -119,6 +123,25 @@ Pfade lassen sich per Umgebungsvariablen überschreiben (`SPO_TOOL_DIR`,
 
 TLS-Terminierung und Domain-Routing übernimmt euer zentraler Reverse Proxy;
 dieser nginx-vhost dient nur als internes Backend im LXC-Container (Port 80).
+
+### Fehlersuche: es erscheint die nginx-Welcome-Page
+
+Wer beim Aufruf von `http://<container-ip>/` die Seite *"Welcome to nginx!"*
+sieht, hat noch Debians Default-Site aktiv. Beim Zugriff über die IP passt kein
+`server_name`, also liefert nginx den vhost aus, der auf Port 80 als
+`default_server` markiert ist — und das ist ohne die Zeile oben die
+Default-Site, nicht fussballcal. (`server_name _` in `fussballcal.conf` ist kein
+Wildcard, sondern nur ein bewusst ungültiger Platzhaltername; er gewinnt
+nichts gegen einen `default_server`.)
+
+```bash
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Umgekehrt gilt: `fussballcal.conf` deklariert selbst `listen 80 default_server`.
+Bleibt die Default-Site liegen, scheitert `nginx -t` mit *"duplicate default
+server for 0.0.0.0:80"* — auch das zeigt auf denselben Fix.
 
 ## Benutzung
 
