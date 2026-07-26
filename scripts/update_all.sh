@@ -47,6 +47,45 @@ flock -n 200 || { echo "$(date -Is) Update läuft bereits, breche ab." >>"$LOG";
 
 log() { echo "$(date -Is) $*" >>"$LOG"; }
 
+# Prüft eine frisch erzeugte ICS-Datei, bevor sie veröffentlicht wird.
+#
+# Hintergrund: SpielplanOffline liefert auch dann eine (syntaktisch gültige)
+# ICS-Datei zurück, wenn die Datums-/Zeit-Entschlüsselung fehlgeschlagen ist –
+# die Termine stehen dann auf dem Jahr 0000 und tragen im SUMMARY die Marke
+# "[FEHLER?]". Der Exit-Code hilft nicht weiter: SpielplanOffline.sh reicht den
+# Fehlercode des awk-Laufs nicht durch. Ohne diese Prüfung überschreibt der
+# Cron-Lauf einen funktionierenden Kalender mit Müll.
+validiere_ics() {
+    local f="$1" name="$2" nevents
+
+    nevents=$(grep -c '^BEGIN:VEVENT' "$f" || true)
+    if [ "$nevents" -eq 0 ]; then
+        log "PRÜFUNG $name: keine Termine (VEVENT) in der Ausgabe."
+        return 1
+    fi
+
+    # Jahr 0000/00xx im DTSTART => Datum wurde nicht erkannt.
+    if grep -qE '^DTSTART[^:]*:0{4}' "$f"; then
+        log "PRÜFUNG $name: Termine ohne erkanntes Datum (DTSTART Jahr 0000)." \
+            "Meist scheitert die OCR-Entschlüsselung – 'scripts/selftest.sh' prüft die Toolchain."
+        return 1
+    fi
+
+    # Marker, den fussball2csv.awk bei nicht erkanntem Datum//Zeit setzt.
+    if grep -q '\[FEHLER?\]' "$f"; then
+        log "PRÜFUNG $name: SpielplanOffline hat Termine als [FEHLER?] markiert."
+        return 1
+    fi
+
+    # RFC 5545 verlangt UTF-8; kaputte Umlaute fallen sonst erst im Kalender auf.
+    if command -v iconv >/dev/null 2>&1 && ! iconv -f UTF-8 -t UTF-8 "$f" >/dev/null 2>&1; then
+        log "PRÜFUNG $name: Datei ist nicht UTF-8-kodiert."
+        return 1
+    fi
+
+    return 0
+}
+
 if [ ! -x "$TOOL_DIR/SpielplanOffline.sh" ]; then
     log "SpielplanOffline.sh nicht gefunden/ausführbar unter $TOOL_DIR, breche ab."
     exit 1
@@ -118,13 +157,15 @@ EOF
         # Nicht sofort abbrechen – ggf. wurde die Datei trotzdem erzeugt.
     fi
 
-    if [ -s "$TMP_OUT/$slug.ics" ]; then
+    if [ ! -s "$TMP_OUT/$slug.ics" ]; then
+        log "FEHLER: keine (nicht-leere) Ausgabedatei für $slug erzeugt"
+    elif ! validiere_ics "$TMP_OUT/$slug.ics" "$slug"; then
+        log "FEHLER: $slug.ics verworfen – bestehende Datei bleibt unverändert."
+    else
         # Atomarer Ersatz, damit nginx nie eine halb geschriebene Datei ausliefert
         mv "$TMP_OUT/$slug.ics" "$OUTDIR/$slug.ics.new"
         mv "$OUTDIR/$slug.ics.new" "$OUTDIR/$slug.ics"
-        log "OK: $slug.ics aktualisiert"
-    else
-        log "FEHLER: keine (nicht-leere) Ausgabedatei für $slug erzeugt"
+        log "OK: $slug.ics aktualisiert ($(grep -c '^BEGIN:VEVENT' "$OUTDIR/$slug.ics") Termine)"
     fi
 
     rm -rf "$TMP_OUT" "$TMP_IN"
