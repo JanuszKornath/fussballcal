@@ -50,7 +50,7 @@ Font, rendert die Codepoints mit **ImageMagick** zu einem Bild, liest sie per
 Kette ist der empfindliche Teil des Aufbaus — siehe
 [Fehlersuche](#fehlersuche-keine-datumszeitangaben-im-kalender).
 
-Zwei Stellen des Tools funktionieren unter Debian/Ubuntu nicht und sind in
+Drei Stellen des Tools funktionieren unter Debian/Ubuntu nicht und sind in
 `vendor/` **lokal gepatcht** (Details: `vendor/README.md`). Nach einem Update
 von SpielplanOffline müssen die Patches erneut angewendet werden.
 
@@ -231,15 +231,22 @@ lesbar werden. Häufigste Gründe:
    Installation nur leere Termine lieferte. Behoben durch den Patch in
    `vendor/SpielplanOffline/runscript.awk` — nach einem Update von
    SpielplanOffline muss er erneut angewendet werden (`vendor/README.md`).
-2. **`tesseract-ocr-deu` fehlt** — ohne Sprachpaket liefert die OCR nichts
+2. **ImageMagick-Ressourcenlimit**: `convert: width or height exceeds limit`.
+   Das OCR-Bild wird zu groß. Behoben durch die selbstregelnde Seitenlänge
+   (ebenfalls `runscript.awk`). Zu erkennen im Log an
+   `Bild konnte nicht erzeugt werden - halbiere die Seitenlaenge …` — solange
+   danach Termine mit Datum erscheinen, ist das kein Fehler, sondern die
+   Selbstregelung bei der Arbeit. Eine Seite kann dabei mehrere Fonts nutzen;
+   fällt nur einer aus, fehlen genau die von ihm verschleierten Angaben.
+3. **`tesseract-ocr-deu` fehlt** — ohne Sprachpaket liefert die OCR nichts
    Brauchbares.
-3. **ImageMagick 7** installiert nur `magick` statt `convert`. `mysetup.sh`
+4. **ImageMagick 7** installiert nur `magick` statt `convert`. `mysetup.sh`
    fängt das ab; SpielplanOffline.sh bricht sonst mit
    *"FEHLER: ImageMagick convert nicht installiert"* ab.
-4. **fussball.de hat das Seitenlayout geändert.** Dann hilft nur eine neuere
+5. **fussball.de hat das Seitenlayout geändert.** Dann hilft nur eine neuere
    SpielplanOffline-Version (`vendor/README.md`).
 
-Die ersten drei Punkte prüft der Selbsttest:
+Die ersten vier Punkte prüft der Selbsttest:
 
 ```bash
 sudo /srv/spielplanoffline/selftest.sh
