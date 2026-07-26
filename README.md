@@ -22,6 +22,7 @@ fussballcal/
 │   └── SpielplanOffline/   # das Tool selbst, fest eingecheckt (kein Download!)
 ├── scripts/
 │   ├── update_all.sh       # Cron-Wrapper: liest teams.txt, ruft SpielplanOffline auf
+│   ├── selftest.sh         # prüft die OCR-Toolchain (ImageMagick, tesseract, Patches)
 │   ├── mysetup.sh          # Linux-Overrides für SpielplanOffline (Locale, kein "open")
 │   └── teams.txt.example   # Vorlage für die Team-Liste (slug;url) -> wird bei der
 │                           # Installation nach /srv/spielplanoffline/teams.txt kopiert
@@ -38,9 +39,20 @@ fussballcal/
 
 SpielplanOffline (V2.9) ist eigentlich ein macOS/Windows-Tool, dessen Kern aber
 ein `gawk`-Skript ist, das auch unter Linux läuft. Es lädt den Spielplan einer
-Mannschaft/eines Vereins von fussball.de, liest die dort teils als Bild
-gerenderten Daten per **OCR** (tesseract + ImageMagick) aus und schreibt sie als
-`.ics` heraus.
+Mannschaft/eines Vereins von fussball.de und schreibt ihn als `.ics` heraus.
+
+Datum und Uhrzeit verschleiert fussball.de dabei über einen eigenen Webfont:
+Im HTML stehen nur Codepoints aus dem Unicode-Private-Use-Bereich
+(`&#xE00B;&#xE017;…`), erst der Font macht daraus lesbare Zahlen. Vereinsnamen
+und Spielorte stehen dagegen im Klartext. SpielplanOffline lädt deshalb den
+Font, rendert die Codepoints mit **ImageMagick** zu einem Bild, liest sie per
+**tesseract** (OCR) zurück und baut daraus eine Übersetzungstabelle. Genau diese
+Kette ist der empfindliche Teil des Aufbaus — siehe
+[Fehlersuche](#fehlersuche-keine-datumszeitangaben-im-kalender).
+
+Zwei Stellen des Tools funktionieren unter Debian/Ubuntu nicht und sind in
+`vendor/` **lokal gepatcht** (Details: `vendor/README.md`). Nach einem Update
+von SpielplanOffline müssen die Patches erneut angewendet werden.
 
 Der Aufruf erfolgt **nicht** über `--flags`, sondern über eine gesourcte
 Parameterdatei. `update_all.sh` erzeugt pro Team eine temporäre Parameterdatei
@@ -75,9 +87,9 @@ sudo chmod +x /srv/spielplanoffline/SpielplanOffline/SpielplanOffline.sh
 sudo mkdir -p /srv/spielplanoffline/work
 sudo mkdir -p /var/www/fussballcal/ics
 
-# Wrapper + Linux-Overrides + Beispielkonfig platzieren
-sudo cp scripts/update_all.sh /srv/spielplanoffline/
-sudo chmod +x /srv/spielplanoffline/update_all.sh
+# Wrapper + Selbsttest + Linux-Overrides + Beispielkonfig platzieren
+sudo cp scripts/update_all.sh scripts/selftest.sh /srv/spielplanoffline/
+sudo chmod +x /srv/spielplanoffline/update_all.sh /srv/spielplanoffline/selftest.sh
 sudo cp scripts/mysetup.sh /srv/spielplanoffline/SpielplanOffline/mysetup.sh
 sudo cp scripts/teams.txt.example /srv/spielplanoffline/teams.txt
 
@@ -93,9 +105,10 @@ sudo nginx -t && sudo systemctl reload nginx
 sudo crontab -e   # Inhalt aus cron/crontab.example übernehmen
 ```
 
-Ein manueller Testlauf (zeigt sofort, ob OCR/convert/tesseract sauber laufen):
+Erst die Toolchain prüfen, dann einen manuellen Lauf anstoßen:
 
 ```bash
+sudo /srv/spielplanoffline/selftest.sh    # ImageMagick, tesseract, Patches
 sudo /srv/spielplanoffline/update_all.sh
 tail -n 40 /var/log/spielplanoffline.log
 ls -l /var/www/fussballcal/ics/
@@ -196,6 +209,60 @@ tail -n 40 /var/log/spielplanoffline.log
 Ungültige Zeilen (falscher Slug, Nicht-fussball.de-URL) werden dort mit
 Begründung protokolliert und übersprungen.
 
+## Fehlersuche: keine Datums-/Zeitangaben im Kalender
+
+**Symptom** — im Log stehen alle Spiele mit Vereinsnamen, Spielort und
+Heim/Auswärts korrekt da, aber ohne Datum und Uhrzeit:
+
+```
+28      [FEHLER?] 0.0.0         Bovender SV - 1. SC Göttingen 05  (Bovenden A-Platz, …) [Auswärts]
+ Keine Zeit gefunden Kein Datum gefunden
+------------------------------------------------------------------------
+FEHLER!!! Mindestens ein Datum stimmt nicht.
+```
+
+**Ursache** — genau diese Aufteilung (Namen gut, Datum/Zeit fehlt) zeigt, dass
+die Font-Entschlüsselung gescheitert ist: Vereinsnamen stehen im HTML im
+Klartext, Datum und Uhrzeit nur als Private-Use-Codepoints, die erst per OCR
+lesbar werden. Häufigste Gründe:
+
+1. **ImageMagick-Richtlinie** blockiert das Rendern (`label:@datei`). Das ist
+   die Voreinstellung unter Debian/Ubuntu und war der Grund, weshalb die erste
+   Installation nur leere Termine lieferte. Behoben durch den Patch in
+   `vendor/SpielplanOffline/runscript.awk` — nach einem Update von
+   SpielplanOffline muss er erneut angewendet werden (`vendor/README.md`).
+2. **`tesseract-ocr-deu` fehlt** — ohne Sprachpaket liefert die OCR nichts
+   Brauchbares.
+3. **ImageMagick 7** installiert nur `magick` statt `convert`. `mysetup.sh`
+   fängt das ab; SpielplanOffline.sh bricht sonst mit
+   *"FEHLER: ImageMagick convert nicht installiert"* ab.
+4. **fussball.de hat das Seitenlayout geändert.** Dann hilft nur eine neuere
+   SpielplanOffline-Version (`vendor/README.md`).
+
+Die ersten drei Punkte prüft der Selbsttest:
+
+```bash
+sudo /srv/spielplanoffline/selftest.sh
+```
+
+**Auswirkung auf den veröffentlichten Kalender** — `update_all.sh` prüft jede
+frisch erzeugte `.ics`, bevor sie nach `/var/www/fussballcal/ics/` wandert
+(mindestens ein Termin, kein `DTSTART` im Jahr 0000, keine `[FEHLER?]`-Marken,
+gültiges UTF-8). Schlägt die Prüfung fehl, bleibt die bisherige Datei stehen —
+ein veralteter Kalender ist besser als einer voller Termine am 00.00.0000. Im
+Log erscheint dann `FEHLER: <slug>.ics verworfen`.
+
+Zwischenstände eines Laufs liegen unter `/srv/spielplanoffline/work/SpielplanOffline/tmp/`
+und helfen beim Eingrenzen:
+
+| Datei | Inhalt |
+|---|---|
+| `spielplan-<verein>-original.html` | Seite, wie sie von fussball.de kam (noch verschleiert) |
+| `spielplan-<verein>.html` | dieselbe Seite nach der Entschlüsselung — hier muss das Datum lesbar sein |
+| `image-<fontnr>.1.png` | das Bild, das an die OCR geht (fehlt es, hakt ImageMagick) |
+| `ocr-<fontnr>.txt` | was tesseract gelesen hat |
+| `codetable-<fontnr>.txt` | Übersetzungstabelle Codepoint → Zeichen (leer = Entschlüsselung gescheitert) |
+
 ## Offene Punkte (TODO)
 
 - [x] Aufrufkonvention von SpielplanOffline gegen das Tar-Archiv (V2.9) verifiziert
@@ -203,11 +270,18 @@ Begründung protokolliert und übersprungen.
 - [x] `vendor/SpielplanOffline/` (V2.9) eingecheckt — das Repo ist damit
       self-contained, Installation und Betrieb laden nichts mehr von
       astro.ru.nl nach.
-- [ ] End-to-End-Testlauf auf dem Debian-Server durchführen (in der Build-Umgebung
-      ist fussball.de/astro.ru.nl gesperrt, ein Live-OCR-Lauf war dort nicht
-      möglich). Fussball.de ändert sein Layout/Font-Obfuskation regelmäßig – bei
-      Fehlern kann eine neuere SpielplanOffline-Version nötig sein, die dann
-      wieder unter `vendor/` eingecheckt wird.
+- [x] Erster Serverlauf lieferte Termine ohne Datum/Uhrzeit. Ursache gefunden und
+      behoben: Debian/Ubuntu verbieten `label:@datei` in ImageMagick, damit
+      scheiterte die OCR-Entschlüsselung der Datumsangaben (`vendor/README.md`).
+      Zusätzlich schrieb `iconv.perl` die `.ics` als Latin-1 statt UTF-8.
+- [x] `update_all.sh` verwirft fehlerhafte ICS-Dateien, statt einen funktionierenden
+      Kalender damit zu überschreiben; `scripts/selftest.sh` prüft die Toolchain.
+- [ ] End-to-End-Testlauf gegen das echte fussball.de auf dem Server durchführen
+      (in der Build-Umgebung ist fussball.de gesperrt; verifiziert wurde die
+      Pipeline dort gegen eine nachgebaute, identisch verschleierte Seite).
+      Fussball.de ändert sein Layout/Font-Obfuskation regelmäßig – bei Fehlern
+      kann eine neuere SpielplanOffline-Version nötig sein, die dann wieder unter
+      `vendor/` eingecheckt wird.
 - [ ] Rechtliche Prüfung bei öffentlicher Bereitstellung mehrerer fremder Vereine
       (siehe Hinweis unten).
 - [ ] `add_team.php` produktiv nur hinter Auth/Captcha betreiben, um Missbrauch
