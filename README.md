@@ -96,7 +96,8 @@ deshalb gibt es genau eine Passwortabfrage statt fünfzehn (siehe
 |---|---|
 | `/srv/spielplanoffline/SpielplanOffline/` | das Tool aus `vendor/` inkl. Patches und `mysetup.sh` |
 | `/srv/spielplanoffline/{update_all.sh,selftest.sh}` | Wrapper und Selbsttest (ausführbar) |
-| `/srv/spielplanoffline/teams.txt` | Team-Liste — **nur wenn sie noch nicht existiert** |
+| `/srv/spielplanoffline/teams.txt` | Team-Liste — **nur wenn sie noch nicht existiert**; für die Webserver-Gruppe beschreibbar (664), damit `add_team.php` Zeilen anhängen kann |
+| `/srv/spielplanoffline/spo.env` | die Pfade dieser Installation; `update_all.sh` und `selftest.sh` lesen sie |
 | `/srv/spielplanoffline/work/` | Arbeitsverzeichnis (tmp/Fonts/Output) |
 | `/var/www/fussballcal/{add_team.php,ics/}` | Webformular und Kalenderverzeichnis |
 | `/etc/nginx/sites-{available,enabled}/fussballcal.conf` | vhost, danach `nginx -t` + Reload |
@@ -105,7 +106,16 @@ deshalb gibt es genau eine Passwortabfrage statt fünfzehn (siehe
 Optionen: `--no-nginx` (vhost und Reload überspringen, z.B. wenn der vhost von
 Hand angepasst wurde) und `--force-config` (teams.txt aus der Vorlage
 überschreiben, Sicherung als `teams.txt.bak`). Ziele lassen sich über
-`SPO_DIR`, `WEB_DIR` und `SPO_LOG` verschieben.
+`SPO_DIR`, `WEB_DIR` und `SPO_LOG` verschieben; `WEB_GROUP` (Vorgabe
+`www-data`) ist die Gruppe des PHP-FPM-Workers.
+
+Beschreibbar für den Webserver ist ausschließlich `teams.txt` — das
+Verzeichnis darüber bleibt root. Dort liegen `update_all.sh` und der
+Vendor-Baum, die der Cron-Job als root ausführt; wären sie für den Webserver
+schreibbar, hätte ein Treffer in `add_team.php` direkt root zur Folge. Über
+`teams.txt` selbst lässt sich nichts einschleusen: `update_all.sh` akzeptiert
+nur Slugs aus `[a-z0-9_-]` und fussball.de-URLs und reicht die URL als
+Variable statt als Text in die Parameterdatei.
 
 Erst die Toolchain prüfen, dann einen manuellen Lauf anstoßen:
 

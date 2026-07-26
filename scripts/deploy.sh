@@ -30,7 +30,7 @@ set -euo pipefail
 # sudo setzt die Umgebung zurück (env_reset), die Overrides müssen bei der
 # Eskalation weiter unten also ausdrücklich mitgegeben werden.
 env_overrides=()
-for var in SPO_DIR WEB_DIR SPO_LOG; do
+for var in SPO_DIR WEB_DIR SPO_LOG WEB_GROUP; do
     if [ -n "${!var-}" ]; then
         env_overrides+=("$var=${!var}")
     fi
@@ -39,6 +39,8 @@ done
 SPO_DIR="${SPO_DIR:-/srv/spielplanoffline}"
 WEB_DIR="${WEB_DIR:-/var/www/fussballcal}"
 LOG_FILE="${SPO_LOG:-/var/log/spielplanoffline.log}"
+# Gruppe des PHP-FPM-Workers — nur teams.txt wird für sie beschreibbar.
+WEB_GROUP="${WEB_GROUP:-www-data}"
 NGINX_CONF="/etc/nginx/sites-available/fussballcal.conf"
 NGINX_LINK="/etc/nginx/sites-enabled/fussballcal.conf"
 
@@ -123,6 +125,24 @@ install -m 755 "$REPO_DIR/scripts/update_all.sh" "$SPO_DIR/update_all.sh"
 install -m 755 "$REPO_DIR/scripts/selftest.sh"   "$SPO_DIR/selftest.sh"
 info "Skripte: update_all.sh, selftest.sh"
 
+# Pfade dieser Installation für die installierten Skripte festhalten. Ohne das
+# behielten update_all.sh und selftest.sh ihre eingebauten Vorgaben und würden
+# bei einem verschobenen Rollout (SPO_DIR/WEB_DIR) ins Leere greifen — oder,
+# schlimmer, die Standardinstallation daneben anfassen. Beide sourcen die Datei
+# aus ihrem eigenen Verzeichnis; die `:-`-Zuweisungen lassen echten
+# Umgebungsvariablen den Vortritt.
+cat >"$SPO_DIR/spo.env" <<EOF
+# Von deploy.sh erzeugt — Pfade dieser Installation. Nicht von Hand ändern,
+# der nächste Rollout überschreibt die Datei.
+SPO_TOOL_DIR="\${SPO_TOOL_DIR:-$SPO_DIR/SpielplanOffline}"
+SPO_CONFIG="\${SPO_CONFIG:-$SPO_DIR/teams.txt}"
+SPO_OUTDIR="\${SPO_OUTDIR:-$WEB_DIR/ics}"
+SPO_HOME="\${SPO_HOME:-$SPO_DIR/work}"
+SPO_LOG="\${SPO_LOG:-$LOG_FILE}"
+EOF
+chmod 644 "$SPO_DIR/spo.env"
+info "Pfade festgehalten: $SPO_DIR/spo.env"
+
 # ------------------------------------------------------------------
 # 4. Team-Liste — die aktive Konfiguration ist tabu, solange sie existiert.
 #    Ein zweiter Rollout darf die eingetragenen Kalender nicht wegwerfen.
@@ -136,6 +156,20 @@ elif [ "$force_config" -eq 1 ]; then
     info "teams.txt überschrieben (Sicherung: teams.txt.bak)"
 else
     info "teams.txt existiert bereits — unverändert gelassen"
+fi
+
+# Das Webformular (add_team.php) hängt Zeilen an teams.txt an und braucht dafür
+# Schreibrecht auf die DATEI. Das Verzeichnis bleibt bewusst root-only: dort
+# liegen update_all.sh und der Vendor-Baum, die der Cron-Job als root ausführt.
+# Über teams.txt lässt sich nichts einschleusen — update_all.sh nimmt nur Slugs
+# aus [a-z0-9_-] und fussball.de-URLs an und reicht die URL als Variable weiter.
+if getent group "$WEB_GROUP" >/dev/null 2>&1; then
+    chown "root:$WEB_GROUP" "$SPO_DIR/teams.txt"
+    chmod 664 "$SPO_DIR/teams.txt"
+    info "teams.txt beschreibbar für Gruppe $WEB_GROUP (Verzeichnis bleibt root-only)"
+else
+    info "Gruppe $WEB_GROUP nicht vorhanden — teams.txt bleibt root-only"
+    info "  (das Webformular kann dann nichts eintragen; WEB_GROUP setzen)"
 fi
 
 # ------------------------------------------------------------------
