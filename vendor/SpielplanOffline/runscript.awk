@@ -262,10 +262,10 @@ BEGIN{
                 COMMAND=AWK " -f nlines.awk " QUOTE utfcodes QUOTE 
                 COMMAND | getline status; close(COMMAND)
 		
-                maxpagelen=100 # Maximum number of lines per page for OCR
+                maxpagelen=50 # Maximum number of lines per page for OCR
                 #print "nlines=",status
                 nlines=status; if (nlines<1) {nlines=1} # total number of lines to be coverted
-                npages=int((nlines-1)/maxpagelen+1) # number of pages/images to be created and read by OCR 
+                npages=int((nlines-1)/maxpagelen+1) # number of pages/images to be created and read by OCR
                 pagelen=int(nlines/npages+0.5) # number of lines per page
 
                 # this file contains the utf hexcodes for each character which will be compared against the OCR output		   
@@ -278,12 +278,23 @@ BEGIN{
                 # OCR software and return the clear text in an ASCII text file
                 # to avoid too large image files, the input text is split into
                 # multiple pages if needed
-                for (j=1;j<=npages;j++) {
-			
-                    startline=int((j-1)*pagelen)+1 # write jth page from startline to endline
+                #LOKALER PATCH (fussballcal): Die Seitenlaenge ist jetzt
+                #selbstregelnd. Fussball.de nutzt inzwischen Fonts, deren
+                #Zeilenhoehe so gross ist, dass ImageMagick bei einer vollen
+                #Seite mit "width or height exceeds limit" abbricht (Grenze aus
+                #policy.xml, per Vorgabe 32KP). Es entsteht dann kein Bild,
+                #die OCR liefert nichts und die Code-Tabelle bleibt leer --
+                #also wieder keine Datums-/Zeitangaben. Schlaegt das Rendern
+                #fehl, wird die Seite halbiert und erneut versucht, statt eine
+                #feste Zeilenzahl zu raten.
+                j=0
+                startline=1
+                while (startline<=nlines) {
+
                     endline=startline+pagelen-1
                     if (endline>nlines) endline=nlines
-                    print "Creating OCR Image #" j "/" npages " with maximally " pagelen " lines from line " startline " to " endline
+                    j++
+                    print "Creating OCR Image #" j " with maximally " pagelen " lines from line " startline " to " endline
 
                     # UTF-encoded file which contains the characters to be decoded via OCR
                     utfcodesmult=tmpdir DIRSEP "utfcodes-" fn DOT "mult" DOT j DOT "txt"
@@ -317,18 +328,42 @@ BEGIN{
                     #doppelten Anfuehrungszeichen nicht erneut expandiert.
                     if (OSFAMILY=="WIN") labelarg="label:@" QUOTE utfcodesmult QUOTE
                     else labelarg="label:\"$(cat " QUOTE utfcodesmult QUOTE ")\""
+                    #Ein Bild aus einem frueheren Lauf wuerde sonst faelschlich
+                    #als Erfolg durchgehen.
+                    DELETEFILE(image)
                     COMMAND=CONVERT " -background white -fill black -font " QUOTE fontfile QUOTE " -pointsize " pointsize " -kerning " kerning " -interword-spacing " interwordspacing " " labelarg " " QUOTE image QUOTE
                     COMMAND | getline status; close(COMMAND)
-                    #print "Command:",COMMAND       
+                    #print "Command:",COMMAND
+
+                    if (!FILEEXISTS(image)) {
+                        #Untergrenze 2: triple.awk behandelt endline<=startline
+                        #als "nicht aufteilen" und wuerde bei einer Seitenlaenge
+                        #von 1 wieder die komplette Datei ausgeben.
+                        if (pagelen>2) {
+                            pagelen=int(pagelen/2); if (pagelen<2) pagelen=2
+                            print "Bild konnte nicht erzeugt werden - halbiere die Seitenlaenge auf " pagelen " Zeilen und versuche es erneut."
+                            j--
+                            continue
+                        }
+                        #Selbst zwei Zeilen lassen sich nicht rendern. Weiter-
+                        #machen wuerde die Zuordnung zwischen OCR-Ausgabe und
+                        #Hexcodes verschieben und die restliche Code-Tabelle
+                        #unbrauchbar machen. Deshalb hier abbrechen -- was
+                        #bisher erkannt wurde, bleibt gueltig.
+                        print "FEHLER: Zeile " startline " von " utfcodes " laesst sich nicht rendern - breche die Zeichenerkennung fuer Font " fn " ab."
+                        break
+                    }
 
                     #Now run COR code
 #		 print "OCR Textfile:",ocrfile
                     COMMAND=OCR " " QUOTE image QUOTE " " QUOTE ocrrootpageN QUOTE OCROPT
                     COMMAND | getline status; close(COMMAND)
 
-                    # correct for some common mistakes and append output pages to a single textfile 
-                    COMMAND=AWK " -f correct.awk " QUOTE ocrfilepageN QUOTE APPEND QUOTE ocrfile QUOTE 
+                    # correct for some common mistakes and append output pages to a single textfile
+                    COMMAND=AWK " -f correct.awk " QUOTE ocrfilepageN QUOTE APPEND QUOTE ocrfile QUOTE
                     system(COMMAND)
+
+                    startline=endline+1
                 }
 		
                 #Now create a translation file, whereby a hexcode is followed by
@@ -411,6 +446,17 @@ function TESTMAKEDIR(dir) {
     COMMAND | getline status; close(COMMAND)
     if (status) print status
     status=""
+}
+
+#LOKALER PATCH (fussballcal): Wird gebraucht, um zu erkennen, ob ImageMagick
+#ein Bild tatsaechlich erzeugt hat. Der Aufruf oben liefert seinen Exit-Code
+#nicht zurueck ("COMMAND | getline" liest nur die Ausgabe), Fehler blieben
+#deshalb bisher unbemerkt.
+function FILEEXISTS(file) {
+    if (OSFAMILY!="MAC") return 1
+    COMMAND="if [ -s " QUOTE file QUOTE " ]; then echo 1; else echo 0; fi"
+    COMMAND | getline fileexistsresult; close(COMMAND)
+    return (fileexistsresult+0)
 }
 
 function DELETEFILE(file) {
