@@ -26,6 +26,16 @@
 
 set -euo pipefail
 
+# Vom Aufrufer per Umgebung gesetzte Pfade merken, bevor die Vorgaben greifen.
+# sudo setzt die Umgebung zurück (env_reset), die Overrides müssen bei der
+# Eskalation weiter unten also ausdrücklich mitgegeben werden.
+env_overrides=()
+for var in SPO_DIR WEB_DIR SPO_LOG; do
+    if [ -n "${!var-}" ]; then
+        env_overrides+=("$var=${!var}")
+    fi
+done
+
 SPO_DIR="${SPO_DIR:-/srv/spielplanoffline}"
 WEB_DIR="${WEB_DIR:-/var/www/fussballcal}"
 LOG_FILE="${SPO_LOG:-/var/log/spielplanoffline.log}"
@@ -54,6 +64,14 @@ done
 if [ "$(id -u)" -ne 0 ]; then
     if command -v sudo >/dev/null 2>&1; then
         echo "Nicht als root gestartet — eskaliere einmalig per sudo."
+        # Ohne Overrides bleibt der Aufruf schlicht: eine sudoers-Regel, die
+        # den Skriptpfad freigibt (siehe README), greift dann weiterhin.
+        # Mit Overrides führt der Weg über env(1) — sudo würde die Variablen
+        # sonst verwerfen und der root-Lauf schriebe klammheimlich nach
+        # /srv/spielplanoffline statt in das gewünschte Ziel.
+        if [ "${#env_overrides[@]}" -gt 0 ]; then
+            exec sudo -- env "${env_overrides[@]}" "$0" "$@"
+        fi
         exec sudo -- "$0" "$@"
     fi
     echo "FEHLER: Dieses Skript braucht root-Rechte (sudo nicht gefunden)." >&2
