@@ -98,9 +98,17 @@ info "Verzeichnisse: $SPO_DIR, $SPO_DIR/work, $WEB_DIR/ics"
 # 2. SpielplanOffline aus vendor/ (inklusive der Linux-Patches)
 #    cp -a überschreibt die Programmdateien, lässt aber alles unberührt, was
 #    zur Laufzeit dazugekommen ist.
+#
+#    Anschließend gehört der komplette Baum root. Der Checkout liegt in der
+#    Regel einem normalen Benutzer, und `cp -a` würde dessen Eigentümerschaft
+#    mitkopieren — der Cron-Job führt SpielplanOffline.sh aber als root aus.
+#    Wer in den installierten Baum schreiben darf, hätte damit beim nächsten
+#    Cron-Lauf root.
 # ------------------------------------------------------------------
 install -d -m 755 "$SPO_DIR/SpielplanOffline"
 cp -a "$REPO_DIR/vendor/SpielplanOffline/." "$SPO_DIR/SpielplanOffline/"
+chown -R root:root "$SPO_DIR/SpielplanOffline"
+chmod -R go-w "$SPO_DIR/SpielplanOffline"
 chmod +x "$SPO_DIR/SpielplanOffline/SpielplanOffline.sh"
 info "SpielplanOffline nach $SPO_DIR/SpielplanOffline"
 
@@ -134,6 +142,10 @@ fi
 # 5. Logdatei (nur anlegen, niemals leeren)
 # ------------------------------------------------------------------
 if [ ! -e "$LOG_FILE" ]; then
+    # Bei verschobenem SPO_LOG kann das Verzeichnis noch fehlen; ohne diesen
+    # Schritt bräche der Rollout hier mitten drin ab.
+    log_dir="$(dirname "$LOG_FILE")"
+    [ -d "$log_dir" ] || install -d -m 755 "$log_dir"
     : >"$LOG_FILE"
     chmod 644 "$LOG_FILE"
     info "Logdatei angelegt: $LOG_FILE"
