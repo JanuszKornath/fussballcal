@@ -127,6 +127,12 @@ if [ -d "$TOOL_DIR" ]; then
     else
         bad "runscript.awk in $TOOL_DIR ist ungepatcht (nutzt noch 'label:@datei')."
     fi
+    if grep -q 'halbiere die Seitenlaenge' "$TOOL_DIR/runscript.awk" 2>/dev/null; then
+        ok "runscript.awk: Patch für die selbstregelnde Seitenlänge ist aktiv"
+    else
+        bad "runscript.awk in $TOOL_DIR hat keine selbstregelnde Seitenlänge — bei großen"
+        bad "Spielplänen scheitert ImageMagick mit 'width or height exceeds limit'."
+    fi
     if grep -q ">:utf8" "$TOOL_DIR/iconv.perl" 2>/dev/null; then
         ok "iconv.perl: Patch für UTF-8-Ausgabe ist aktiv"
     else
