@@ -88,9 +88,9 @@ git commit -m "SpielplanOffline auf V<x.y> aktualisieren"
 Sie müssen danach erneut angewendet werden, sonst fehlen wieder alle Datums-
 und Zeitangaben. `scripts/selftest.sh` meldet das.
 
-Danach auf dem Server neu ausrollen (siehe Installations-Abschnitt im
-Haupt-README) und prüfen, ob die `-var`-Aufrufkonvention von `update_all.sh`
-noch zur neuen Version passt.
+Danach auf dem Server neu ausrollen (`git pull && sudo scripts/deploy.sh`, siehe
+Installations-Abschnitt im Haupt-README) und prüfen, ob die
+`-var`-Aufrufkonvention von `update_all.sh` noch zur neuen Version passt.
 
 ## Lizenzhinweis
 
