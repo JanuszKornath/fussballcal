@@ -100,6 +100,7 @@ deshalb gibt es genau eine Passwortabfrage statt fünfzehn (siehe
 | `/srv/spielplanoffline/spo.env` | die Pfade dieser Installation; `update_all.sh` und `selftest.sh` lesen sie |
 | `/srv/spielplanoffline/work/` | Arbeitsverzeichnis (tmp/Fonts/Output) |
 | `/var/www/fussballcal/{add_team.php,ics/}` | Webformular und Kalenderverzeichnis |
+| `/var/www/fussballcal/config.php` | dieselben Pfade für das Formular (Pendant zu `spo.env`) |
 | `/etc/nginx/sites-{available,enabled}/fussballcal.conf` | vhost, danach `nginx -t` + Reload |
 | `/var/log/spielplanoffline.log` | Logdatei (wird nie geleert) |
 
