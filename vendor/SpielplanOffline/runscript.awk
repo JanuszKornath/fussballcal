@@ -20,7 +20,7 @@
 # -v Prefix="Text"         - Ein Schluesselwort/Prefix, dass man vor jedes Spiel setzen kann (z.B. "Fussball", wenn man Kalender mit mehreren Sportarten hat)
 # -v SequenceNR            - seconds since 1970 - should always be higher, whenever a new .ics version is created and imported into a calendar
 # -v NurHeimspiele=1       - Gebe nur Heimspiele aus
-# -v NurAuswaertsspiele=1  - Gebe nur Auswärtsspiele aus
+# -v NurAuswaertsspiele=1  - Gebe nur Auswï¿½rtsspiele aus
 # -v ignoriereAbgesagt=1   - Ignoriere abgesagte Spiele im Output
 #
 # Beispiel:
@@ -305,7 +305,19 @@ BEGIN{
                     #print "Fontfile:",fontfile
 		
                     #convert utfcodes in page to an image which is fed to ocr software
-                    COMMAND=CONVERT " -background white -fill black -font " QUOTE fontfile QUOTE " -pointsize " pointsize " -kerning " kerning " -interword-spacing " interwordspacing " label:@" QUOTE utfcodesmult QUOTE " " QUOTE image QUOTE
+                    #LOKALER PATCH (fussballcal): Debian/Ubuntu verbieten in
+                    #/etc/ImageMagick-*/policy.xml per <policy domain="path"
+                    #rights="none" pattern="@*"/> das indirekte Einlesen von
+                    #Dateien, d.h. "label:@datei" scheitert dort mit
+                    #"operation not allowed by the security policy". Ohne Bild
+                    #gibt es keine OCR-Ausgabe, keine Code-Tabelle und damit
+                    #keine entschluesselten Datums-/Zeitangaben. Unter Unix
+                    #wird der Text deshalb per Kommandosubstitution direkt als
+                    #Argument uebergeben; das Ergebnis von $(...) wird in
+                    #doppelten Anfuehrungszeichen nicht erneut expandiert.
+                    if (OSFAMILY=="WIN") labelarg="label:@" QUOTE utfcodesmult QUOTE
+                    else labelarg="label:\"$(cat " QUOTE utfcodesmult QUOTE ")\""
+                    COMMAND=CONVERT " -background white -fill black -font " QUOTE fontfile QUOTE " -pointsize " pointsize " -kerning " kerning " -interword-spacing " interwordspacing " " labelarg " " QUOTE image QUOTE
                     COMMAND | getline status; close(COMMAND)
                     #print "Command:",COMMAND       
 
