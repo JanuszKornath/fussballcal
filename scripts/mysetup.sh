@@ -19,9 +19,15 @@ history="$HOMEDIR/history.txt"
 
 #------------------------------------------------------------------------
 # Zusätzliche Programmpfade (unter Linux liegen die Tools im PATH -> leer).
-# WGET/AWK/OCR/CONVERT bleiben ungesetzt und werden per `which` gefunden.
+# WGET/AWK/OCR bleiben ungesetzt und werden per `which` gefunden.
 #------------------------------------------------------------------------
 EXECPATH=""
+
+# ImageMagick 7 (Debian 13/Ubuntu 25.04 aufwärts) installiert nur noch
+# `magick`; SpielplanOffline.sh sucht ausschließlich nach `convert` und bricht
+# sonst mit "FEHLER: ImageMagick convert nicht installiert" ab. Die
+# Kommandozeile von `magick` ist an dieser Stelle identisch.
+CONVERT="$(command -v convert || command -v magick || true)"
 
 # Gültige UTF-8-Locale (setup.sh setzt en_ENG.UTF-8, die es nicht gibt).
 export LC_ALL=C.UTF-8
