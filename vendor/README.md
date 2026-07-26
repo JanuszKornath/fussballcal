@@ -35,7 +35,33 @@ Der Patch übergibt den Text unter Unix direkt als Argument
 (`label:"$(cat '<datei>')"`) statt über `@<datei>`. Damit ist keine Lockerung
 der Sicherheitsrichtlinie nötig.
 
-### 2. `iconv.perl` — UTF-8-Ausgabe
+### 2. `runscript.awk` — selbstregelnde Seitenlänge für die OCR-Bilder
+
+Die Zeichen eines Fonts werden seitenweise in ein Bild gerendert, fest auf 100
+Zeilen pro Seite. Fussball.de nutzt inzwischen Fonts, bei denen ImageMagick
+schon vorher abbricht:
+
+```
+convert: width or height exceeds limit
+```
+
+Die Grenze steht in `policy.xml` (`resource width`/`height`, per Vorgabe 32KP).
+Wieder gilt: kein Bild, keine OCR-Ausgabe, leere Code-Tabelle, keine
+Datums-/Zeitangaben — bei nur *einem* der Fonts einer Seite, weshalb Teile des
+Spielplans lesbar aussehen können und trotzdem jedes Datum fehlt.
+
+Statt eine feste Zeilenzahl zu raten, prüft der Patch nach jedem `convert`, ob
+tatsächlich ein Bild entstanden ist. Wenn nicht, wird die Seitenlänge halbiert
+und erneut versucht (Untergrenze 2 Zeilen — `triple.awk` behandelt
+`endline<=startline` als „nicht aufteilen"). Lässt sich auch das nicht rendern,
+bricht die Zeichenerkennung für diesen Font ab, statt weiterzulaufen: eine
+übersprungene Zeile würde die Zuordnung zwischen OCR-Ausgabe und Hexcodes
+verschieben und die restliche Code-Tabelle unbrauchbar machen.
+
+Dazu kommt: Das Bild der vorigen Seite wird jetzt vor jedem `convert` gelöscht.
+Sonst gilt eine Datei aus einem früheren Lauf fälschlich als Erfolg.
+
+### 3. `iconv.perl` — UTF-8-Ausgabe
 
 Der Ausgabe-Dateihandle hatte keine `:utf8`-Schicht. Perl schrieb die
 dekodierten Strings deshalb als Latin-1, aus `Göttingen` wurde in der `.ics`
