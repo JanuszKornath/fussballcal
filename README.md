@@ -21,6 +21,8 @@ fussballcal/
 ├── vendor/
 │   └── SpielplanOffline/   # das Tool selbst, fest eingecheckt (kein Download!)
 ├── scripts/
+│   ├── deploy.sh           # rollt Repo-Inhalt nach /srv und /var/www aus
+│   │                       # (ein einziger sudo-Aufruf, idempotent)
 │   ├── update_all.sh       # Cron-Wrapper: liest teams.txt, ruft SpielplanOffline auf
 │   ├── selftest.sh         # prüft die OCR-Toolchain (ImageMagick, tesseract, Patches)
 │   ├── mysetup.sh          # Linux-Overrides für SpielplanOffline (Locale, kein "open")
@@ -75,35 +77,46 @@ sudo apt update
 sudo apt install -y wget gawk tesseract-ocr tesseract-ocr-deu imagemagick perl \
     unzip cron nginx php-fpm
 
-# Repo klonen (oder Checkout aktualisieren) und Tool aus vendor/ installieren
+# Repo klonen (oder Checkout aktualisieren), z.B. nach /srv/fussballcal
 git clone https://github.com/JanuszKornath/fussballcal.git
 cd fussballcal
 
-sudo mkdir -p /srv/spielplanoffline
-sudo cp -r vendor/SpielplanOffline /srv/spielplanoffline/
-sudo chmod +x /srv/spielplanoffline/SpielplanOffline/SpielplanOffline.sh
-
-# Arbeitsverzeichnis (SpielplanOffline legt hier tmp/Fonts/Output an)
-sudo mkdir -p /srv/spielplanoffline/work
-sudo mkdir -p /var/www/fussballcal/ics
-
-# Wrapper + Selbsttest + Linux-Overrides + Beispielkonfig platzieren
-sudo cp scripts/update_all.sh scripts/selftest.sh /srv/spielplanoffline/
-sudo chmod +x /srv/spielplanoffline/update_all.sh /srv/spielplanoffline/selftest.sh
-sudo cp scripts/mysetup.sh /srv/spielplanoffline/SpielplanOffline/mysetup.sh
-sudo cp scripts/teams.txt.example /srv/spielplanoffline/teams.txt
-
-# Logdatei für den Cron-Job (vom Cron-User beschreibbar machen)
-sudo touch /var/log/spielplanoffline.log
-
-# Web + nginx
-sudo cp web/add_team.php /var/www/fussballcal/
-sudo cp nginx/fussballcal.conf /etc/nginx/sites-available/
-sudo ln -s /etc/nginx/sites-available/fussballcal.conf /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
+# Alles ausrollen: SpielplanOffline aus vendor/, Wrapper, Selbsttest,
+# Linux-Overrides, Beispielkonfig, Webformular, nginx-vhost, Logdatei.
+sudo scripts/deploy.sh
 
 sudo crontab -e   # Inhalt aus cron/crontab.example übernehmen
 ```
+
+`deploy.sh` macht alle privilegierten Schritte in **einem** sudo-Aufruf —
+deshalb gibt es genau eine Passwortabfrage statt fünfzehn (siehe
+[sudo-Mails](#sudo-mails-a-password-is-required)). Was es anlegt:
+
+| Ziel | Inhalt |
+|---|---|
+| `/srv/spielplanoffline/SpielplanOffline/` | das Tool aus `vendor/` inkl. Patches und `mysetup.sh` |
+| `/srv/spielplanoffline/{update_all.sh,selftest.sh}` | Wrapper und Selbsttest (ausführbar) |
+| `/srv/spielplanoffline/teams.txt` | Team-Liste — **nur wenn sie noch nicht existiert**; für die Webserver-Gruppe beschreibbar (664), damit `add_team.php` Zeilen anhängen kann |
+| `/srv/spielplanoffline/spo.env` | die Pfade dieser Installation; `update_all.sh` und `selftest.sh` lesen sie |
+| `/srv/spielplanoffline/work/` | Arbeitsverzeichnis (tmp/Fonts/Output) |
+| `/var/www/fussballcal/{add_team.php,ics/}` | Webformular und Kalenderverzeichnis |
+| `/var/www/fussballcal/config.php` | dieselben Pfade für das Formular (Pendant zu `spo.env`) |
+| `/etc/nginx/sites-{available,enabled}/fussballcal.conf` | vhost, danach `nginx -t` + Reload |
+| `/var/log/spielplanoffline.log` | Logdatei (wird nie geleert) |
+
+Optionen: `--no-nginx` (vhost und Reload überspringen, z.B. wenn der vhost von
+Hand angepasst wurde) und `--force-config` (teams.txt aus der Vorlage
+überschreiben, Sicherung als `teams.txt.bak`). Ziele lassen sich über
+`SPO_DIR`, `WEB_DIR` und `SPO_LOG` verschieben; `WEB_GROUP` (Vorgabe
+`www-data`) ist die Gruppe des PHP-FPM-Workers.
+
+Beschreibbar für den Webserver ist ausschließlich `teams.txt` — das
+Verzeichnis darüber bleibt root. Dort liegen `update_all.sh` und der
+Vendor-Baum, die der Cron-Job als root ausführt; wären sie für den Webserver
+schreibbar, hätte ein Treffer in `add_team.php` direkt root zur Folge. Über
+`teams.txt` selbst lässt sich nichts einschleusen: `update_all.sh` akzeptiert
+nur Slugs aus `[a-z0-9_-]` und fussball.de-URLs und reicht die URL als
+Variable statt als Text in die Parameterdatei.
 
 Erst die Toolchain prüfen, dann einen manuellen Lauf anstoßen:
 
@@ -116,6 +129,21 @@ ls -l /var/www/fussballcal/ics/
 
 Pfade lassen sich per Umgebungsvariablen überschreiben (`SPO_TOOL_DIR`,
 `SPO_CONFIG`, `SPO_OUTDIR`, `SPO_HOME`, `SPO_START`, `SPO_END`, `SPO_LOG`).
+
+### Änderungen aus dem Repo nachziehen
+
+`deploy.sh` ist idempotent und darf nach jedem `git pull` erneut laufen — es
+ist der einzige vorgesehene Weg, Dateien nach `/srv` zu bringen:
+
+```bash
+cd /srv/fussballcal        # der Checkout auf dem Server
+git pull
+sudo scripts/deploy.sh
+sudo /srv/spielplanoffline/selftest.sh
+```
+
+Die eingetragenen Kalender in `/srv/spielplanoffline/teams.txt` bleiben dabei
+unangetastet.
 
 TLS-Terminierung und Domain-Routing übernimmt euer zentraler Reverse Proxy;
 dieser nginx-vhost dient nur als internes Backend im LXC-Container (Port 80).
@@ -270,6 +298,66 @@ und helfen beim Eingrenzen:
 | `ocr-<fontnr>.txt` | was tesseract gelesen hat |
 | `codetable-<fontnr>.txt` | Übersetzungstabelle Codepoint → Zeichen (leer = Entschlüsselung gescheitert) |
 
+## sudo-Mails: „a password is required"
+
+**Symptom** — an root gehen Mails dieser Form (sichtbar auch in
+`/var/log/auth.log` bzw. `journalctl -t sudo`):
+
+```
+<host> : Jul 26 15:40:23 : <user> : a password is required ; TTY=pts/3 ;
+    PWD=/srv/fussballcal ; USER=root ; COMMAND=/usr/bin/cp scripts/selftest.sh /srv/spielplanoffline/
+```
+
+**Bedeutung** — das ist weder ein Einbruchsversuch noch ein falsch getipptes
+Passwort (das meldet sudo als *"incorrect password attempts"*). Die Meldung
+kommt, wenn sudo authentifizieren **müsste**, aber nicht nachfragen **darf**:
+
+1. `sudo -n` / `--non-interactive` — direkt oder aus einem Wrapper
+   (Makefile, Deploy-Skript, Ansible ohne `become_ask_pass`).
+2. Kein nutzbares Terminal für den Prompt: der Befehl steckt in einem Skript,
+   dessen Eingabe aus Datei oder Pipe kommt (`ssh host 'bash -s' < setup.sh`,
+   `curl … | bash`), oder er läuft aus cron/at/einem Editor-Terminal heraus.
+3. Der sudo-Timestamp ist mitten in einer langen Befehlskette abgelaufen
+   (Voreinstellung: 15 Minuten). Die ersten `sudo cp` laufen durch, ein
+   späteres will erneut fragen — und kann es nicht.
+4. Es gibt eine `NOPASSWD`-Regel, die diesen konkreten Befehl nicht abdeckt
+   (`sudo -l` zeigt, was für den Benutzer erlaubt ist).
+
+`PWD=/srv/fussballcal` und `COMMAND=…cp scripts/selftest.sh…` verraten den
+Auslöser: einer der einzeln abgesetzten Kopierbefehle aus der Installations-
+bzw. Update-Anleitung. Der abgebrochene `cp` bedeutet auch, dass genau diese
+Datei auf dem Server **nicht** aktualisiert wurde — der Rollout war unvollständig.
+
+**Lösung** — nicht jeden einzelnen Befehl privilegieren, sondern einmal das
+Deploy-Skript:
+
+```bash
+cd /srv/fussballcal
+git pull
+sudo scripts/deploy.sh     # eine Passwortabfrage für den kompletten Rollout
+```
+
+Das Skript eskaliert notfalls selbst (`./scripts/deploy.sh` ohne `sudo` genügt),
+bricht bei einem Fehler sofort ab (`set -euo pipefail`) und hinterlässt keinen
+halben Stand mehr.
+
+**Wenn der Rollout unbeaufsichtigt laufen soll** (Cron, CI, `ssh … <<'EOF'`),
+kann man genau dieses eine Skript vom Passwort befreien:
+
+```bash
+sudo visudo -f /etc/sudoers.d/fussballcal
+```
+
+```
+# nur das Deploy-Skript, kein allgemeines NOPASSWD
+badmin ALL=(root) NOPASSWD: /srv/fussballcal/scripts/deploy.sh
+```
+
+Achtung: `deploy.sh` kopiert Dateien aus dem Checkout als root. Wer in den
+Checkout schreiben darf, ist mit dieser Regel faktisch root — vertretbar, wenn
+der Benutzer ohnehin der Server-Administrator ist, sonst besser bei der
+Passwortabfrage bleiben.
+
 ## Offene Punkte (TODO)
 
 - [x] Aufrufkonvention von SpielplanOffline gegen das Tar-Archiv (V2.9) verifiziert
@@ -287,6 +375,10 @@ und helfen beim Eingrenzen:
       inzwischen mehrere Obfuskations-Fonts, bei den größeren brach ImageMagick
       mit `width or height exceeds limit` ab. Die Seitenlänge der OCR-Bilder ist
       jetzt selbstregelnd (`vendor/README.md`).
+- [x] Rollout in `scripts/deploy.sh` gebündelt: eine Rechteeskalation statt
+      fünfzehn einzelner `sudo`-Befehle. Das beseitigt die sudo-Mails
+      „a password is required" und die dadurch unvollständigen Rollouts
+      (siehe [sudo-Mails](#sudo-mails-a-password-is-required)).
 - [x] End-to-End-Testlauf gegen das echte fussball.de auf dem Server: am
       26.07.2026 erfolgreich, 39 Termine mit Datum und Uhrzeit. Gegen die
       Mannschaftsseite geprüft — Datum, Anstoßzeit und Paarung stimmen überein,
