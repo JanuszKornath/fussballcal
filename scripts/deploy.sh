@@ -191,6 +191,23 @@ fi
 install -m 644 "$REPO_DIR/web/add_team.php" "$WEB_DIR/add_team.php"
 info "Webformular: $WEB_DIR/add_team.php"
 
+# Pendant zu spo.env für die PHP-Seite: ohne diese Datei zeigte das Formular
+# bei verschobenem Rollout weiter auf /srv/spielplanoffline und schriebe in
+# eine teams.txt, die der Cron-Job gar nicht liest.
+# In PHP-Strings müssen Backslash und einfaches Anführungszeichen escapt werden.
+php_quote() { printf "%s" "$1" | sed "s/\\\\/\\\\\\\\/g; s/'/\\\\'/g"; }
+cat >"$WEB_DIR/config.php" <<EOF
+<?php
+// Von deploy.sh erzeugt — Pfade dieser Installation. Nicht von Hand ändern,
+// der nächste Rollout überschreibt die Datei.
+return [
+    'config_file' => '$(php_quote "$SPO_DIR/teams.txt")',
+    'ics_dir'     => '$(php_quote "$WEB_DIR/ics")',
+];
+EOF
+chmod 644 "$WEB_DIR/config.php"
+info "Pfade fürs Formular: $WEB_DIR/config.php"
+
 # ------------------------------------------------------------------
 # 7. nginx-vhost — nur neu laden, wenn sich wirklich etwas geändert hat.
 # ------------------------------------------------------------------

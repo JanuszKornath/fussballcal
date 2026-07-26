@@ -18,8 +18,15 @@
 
 declare(strict_types=1);
 
-const CONFIG_FILE = '/srv/spielplanoffline/teams.txt';
-const ICS_DIR     = '/var/www/fussballcal/ics';
+// Pfade dieser Installation. scripts/deploy.sh legt config.php neben dieses
+// Skript und trägt dort die tatsächlich benutzten Pfade ein — sonst zeigte das
+// Formular bei einem verschobenen Rollout weiter auf /srv/spielplanoffline und
+// schriebe in eine Datei, die der Cron-Job gar nicht liest. Ohne die Datei
+// gelten die Standardpfade.
+$deployed = is_readable(__DIR__ . '/config.php') ? require __DIR__ . '/config.php' : [];
+
+define('CONFIG_FILE', $deployed['config_file'] ?? '/srv/spielplanoffline/teams.txt');
+define('ICS_DIR',     $deployed['ics_dir']     ?? '/var/www/fussballcal/ics');
 const MAX_TEAMS = 200; // simple Obergrenze gegen Missbrauch
 
 /**
