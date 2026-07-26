@@ -283,12 +283,20 @@ und helfen beim Eingrenzen:
       Zusätzlich schrieb `iconv.perl` die `.ics` als Latin-1 statt UTF-8.
 - [x] `update_all.sh` verwirft fehlerhafte ICS-Dateien, statt einen funktionierenden
       Kalender damit zu überschreiben; `scripts/selftest.sh` prüft die Toolchain.
-- [ ] End-to-End-Testlauf gegen das echte fussball.de auf dem Server durchführen
-      (in der Build-Umgebung ist fussball.de gesperrt; verifiziert wurde die
-      Pipeline dort gegen eine nachgebaute, identisch verschleierte Seite).
-      Fussball.de ändert sein Layout/Font-Obfuskation regelmäßig – bei Fehlern
-      kann eine neuere SpielplanOffline-Version nötig sein, die dann wieder unter
-      `vendor/` eingecheckt wird.
+- [x] Zweite Ursache für fehlende Datumsangaben behoben: fussball.de nutzt
+      inzwischen mehrere Obfuskations-Fonts, bei den größeren brach ImageMagick
+      mit `width or height exceeds limit` ab. Die Seitenlänge der OCR-Bilder ist
+      jetzt selbstregelnd (`vendor/README.md`).
+- [x] End-to-End-Testlauf gegen das echte fussball.de auf dem Server: am
+      26.07.2026 erfolgreich, 39 Termine mit Datum und Uhrzeit. Gegen die
+      Mannschaftsseite geprüft — Datum, Anstoßzeit und Paarung stimmen überein,
+      inklusive der Freitags- und Samstagsspiele mit abweichenden Anstoßzeiten.
+
+Fussball.de ändert Layout und Font-Obfuskation regelmäßig. Wenn die
+Datumsangaben irgendwann wieder fehlen, führt der Abschnitt
+[Fehlersuche](#fehlersuche-keine-datumszeitangaben-im-kalender) durch die
+Eingrenzung; im Zweifel ist eine neuere SpielplanOffline-Version nötig, die
+dann wieder unter `vendor/` eingecheckt wird (Patches nicht vergessen).
 - [ ] Rechtliche Prüfung bei öffentlicher Bereitstellung mehrerer fremder Vereine
       (siehe Hinweis unten).
 - [ ] `add_team.php` produktiv nur hinter Auth/Captcha betreiben, um Missbrauch
