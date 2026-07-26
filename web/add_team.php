@@ -73,6 +73,22 @@ function readTeams(): array
     return $teams;
 }
 
+/**
+ * Kann dieses Formular einen Eintrag anhängen?
+ *
+ * Anhängen braucht Schreibrecht auf die DATEI; nur wenn sie noch gar nicht
+ * existiert, muss das Verzeichnis beschreibbar sein. Genau so richtet
+ * scripts/deploy.sh es ein: teams.txt gehört root und der Webserver-Gruppe,
+ * das Verzeichnis darüber bleibt root-only — dort liegen update_all.sh und der
+ * Vendor-Baum, die der Cron-Job als root ausführt.
+ */
+function configWritable(): bool
+{
+    return file_exists(CONFIG_FILE)
+        ? is_writable(CONFIG_FILE)
+        : is_writable(dirname(CONFIG_FILE));
+}
+
 /** Basis-URL dieses Dienstes, wie der Browser ihn gerade sieht. */
 function baseHost(): string
 {
@@ -96,8 +112,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $message = 'Bitte einen gültigen Kurznamen und Link angeben.';
     } elseif (!str_starts_with($url, 'https://www.fussball.de/')) {
         $message = 'Nur Links von https://www.fussball.de/ werden akzeptiert.';
-    } elseif (!is_writable(dirname(CONFIG_FILE))) {
-        $message = 'Konfigurationsverzeichnis nicht beschreibbar (Serverkonfiguration prüfen).';
+    } elseif (!configWritable()) {
+        $message = 'Konfigurationsdatei nicht beschreibbar (Serverkonfiguration prüfen).';
     } else {
         $existing = file_exists(CONFIG_FILE) ? file(CONFIG_FILE, FILE_IGNORE_NEW_LINES) : [];
         $existing = $existing === false ? [] : $existing;

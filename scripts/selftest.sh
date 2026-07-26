@@ -18,6 +18,14 @@
 
 set -uo pipefail
 
+# Pfade der Installation, wie deploy.sh sie neben dieses Skript geschrieben hat
+# (spo.env) — sonst prüfte der Selbsttest bei einem verschobenen Rollout den
+# Standardpfad statt der tatsächlichen Installation. Umgebungsvariablen gehen vor.
+SPO_ENV="${SPO_ENV:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/spo.env}"
+if [ -r "$SPO_ENV" ]; then
+    . "$SPO_ENV"
+fi
+
 fehler=0
 ok()   { printf '  \033[32mOK\033[0m    %s\n' "$*"; }
 warn() { printf '  \033[33mHINWEIS\033[0m %s\n' "$*"; }
