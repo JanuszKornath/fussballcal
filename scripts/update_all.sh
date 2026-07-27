@@ -17,6 +17,14 @@
 
 set -euo pipefail
 
+# Pfade der Installation, wie deploy.sh sie neben dieses Skript geschrieben hat
+# (spo.env). Damit stimmen die Vorgaben unten auch bei einem verschobenen
+# Rollout. Bereits gesetzte Umgebungsvariablen behalten Vorrang.
+SPO_ENV="${SPO_ENV:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/spo.env}"
+if [ -r "$SPO_ENV" ]; then
+    . "$SPO_ENV"
+fi
+
 # Verzeichnis mit SpielplanOffline.sh (im Tar liegt alles im Unterordner
 # SpielplanOffline/). Hier liegt auch mysetup.sh (Linux-Overrides).
 TOOL_DIR="${SPO_TOOL_DIR:-/srv/spielplanoffline/SpielplanOffline}"
