@@ -101,7 +101,7 @@ deshalb gibt es genau eine Passwortabfrage statt fünfzehn (siehe
 | `/srv/spielplanoffline/work/` | Arbeitsverzeichnis (tmp/Fonts/Output) |
 | `/var/www/fussballcal/{add_team.php,ics/}` | Webformular und Kalenderverzeichnis |
 | `/var/www/fussballcal/config.php` | dieselben Pfade für das Formular (Pendant zu `spo.env`) |
-| `/etc/nginx/sites-{available,enabled}/fussballcal.conf` | vhost, danach `nginx -t` + Reload |
+| `/etc/nginx/sites-{available,enabled}/fussballcal.conf` | vhost, danach `nginx -t` + Reload; Debians Default-Site wird dabei deaktiviert (sonst kommt die nginx-Welcome-Page statt fussballcal) |
 | `/var/log/spielplanoffline.log` | Logdatei (wird nie geleert) |
 
 Optionen: `--no-nginx` (vhost und Reload überspringen, z.B. wenn der vhost von
@@ -147,6 +147,34 @@ unangetastet.
 
 TLS-Terminierung und Domain-Routing übernimmt euer zentraler Reverse Proxy;
 dieser nginx-vhost dient nur als internes Backend im LXC-Container (Port 80).
+
+### Fehlersuche: es erscheint die nginx-Welcome-Page
+
+Wer beim Aufruf der Container-IP die Seite *"Welcome to nginx!"* sieht, hat
+noch Debians Default-Site aktiv. Beim Zugriff über die IP passt kein
+`server_name`, also liefert nginx den vhost aus, der auf Port 80 als
+`default_server` markiert ist — und das ist dann die Default-Site, nicht
+fussballcal. (`server_name _` in `fussballcal.conf` ist kein Wildcard, sondern
+nur ein bewusst ungültiger Platzhaltername; er gewinnt nichts gegen einen
+`default_server`.)
+
+`deploy.sh` entfernt die Default-Site selbst, ein erneuter Lauf genügt also:
+
+```bash
+sudo scripts/deploy.sh
+```
+
+Von Hand ist es derselbe Schritt:
+
+```bash
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Wer den vhost mit `--no-nginx` selbst pflegt, muss die Default-Site selbst
+loswerden: `fussballcal.conf` deklariert `listen 80 default_server`, und
+solange Debians Default-Site danebenliegt, scheitert `nginx -t` mit
+*"duplicate default server for 0.0.0.0:80"*.
 
 ## Benutzung
 

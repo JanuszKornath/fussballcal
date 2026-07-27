@@ -43,6 +43,9 @@ LOG_FILE="${SPO_LOG:-/var/log/spielplanoffline.log}"
 WEB_GROUP="${WEB_GROUP:-www-data}"
 NGINX_CONF="/etc/nginx/sites-available/fussballcal.conf"
 NGINX_LINK="/etc/nginx/sites-enabled/fussballcal.conf"
+# Debians Default-vhost; wird deaktiviert, damit fussballcal der
+# default_server auf Port 80 ist (siehe Abschnitt 7).
+NGINX_DEFAULT_LINK="/etc/nginx/sites-enabled/default"
 
 with_nginx=1
 force_config=0
@@ -222,6 +225,16 @@ if [ "$with_nginx" -eq 1 ] && [ -d "$(dirname "$NGINX_CONF")" ]; then
         ln -s "$NGINX_CONF" "$NGINX_LINK"
         changed=1
         info "vhost aktiviert: $NGINX_LINK"
+    fi
+    # Debians mitgelieferte Default-Site muss weg: Sie ist der default_server
+    # auf Port 80 und würde beim Zugriff über die IP die nginx-Welcome-Page
+    # statt fussballcal ausliefern. Seit fussballcal.conf selbst
+    # 'listen 80 default_server' deklariert, scheitert sonst zusätzlich
+    # 'nginx -t' mit "duplicate default server for 0.0.0.0:80".
+    if [ -e "$NGINX_DEFAULT_LINK" ]; then
+        rm -f "$NGINX_DEFAULT_LINK"
+        changed=1
+        info "Debian-Default-Site deaktiviert: $NGINX_DEFAULT_LINK"
     fi
     if [ "$changed" -eq 1 ]; then
         if nginx -t; then
