@@ -166,13 +166,22 @@ fi
 # liegen update_all.sh und der Vendor-Baum, die der Cron-Job als root ausführt.
 # Über teams.txt lässt sich nichts einschleusen — update_all.sh nimmt nur Slugs
 # aus [a-z0-9_-] und fussball.de-URLs an und reicht die URL als Variable weiter.
+#
+# Zum Löschen eines Kalenders entfernt das Formular zusätzlich die ICS-Datei.
+# Dafür braucht es Schreibrecht auf das VERZEICHNIS ics/ (die Dateien selbst
+# gehören root, sie legt der Cron-Job an). Damit kann der Webserver dort auch
+# Dateien anlegen — der vhost liefert alles unter /ics/ deshalb ausschließlich
+# statisch aus (`location ^~ /ics/`), niemals über PHP-FPM.
 if getent group "$WEB_GROUP" >/dev/null 2>&1; then
     chown "root:$WEB_GROUP" "$SPO_DIR/teams.txt"
     chmod 664 "$SPO_DIR/teams.txt"
     info "teams.txt beschreibbar für Gruppe $WEB_GROUP (Verzeichnis bleibt root-only)"
+    chown "root:$WEB_GROUP" "$WEB_DIR/ics"
+    chmod 775 "$WEB_DIR/ics"
+    info "ics/ beschreibbar für Gruppe $WEB_GROUP (Löschen im Formular)"
 else
-    info "Gruppe $WEB_GROUP nicht vorhanden — teams.txt bleibt root-only"
-    info "  (das Webformular kann dann nichts eintragen; WEB_GROUP setzen)"
+    info "Gruppe $WEB_GROUP nicht vorhanden — teams.txt und ics/ bleiben root-only"
+    info "  (das Webformular kann dann nichts eintragen/löschen; WEB_GROUP setzen)"
 fi
 
 # ------------------------------------------------------------------

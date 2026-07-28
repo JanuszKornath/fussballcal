@@ -11,7 +11,8 @@ anderen externen Quellen nach — alles Nötige ist Teil dieses Repos
 
 > Kurz gesagt: Vereins-/Mannschaftslinks werden in `teams.txt` auf dem Server
 > eingetragen (oder per Webformular), abonnierbar ist das Ergebnis unter
-> `webcal://<host>/ics/<slug>.ics`. Details im Abschnitt
+> `webcal://<host>/ics/<slug>.ics`. Löschen geht denselben Weg — im Formular
+> per Knopf, auf dem Server per Editor. Details im Abschnitt
 > [Benutzung](#benutzung).
 
 ## Aufbau
@@ -30,7 +31,7 @@ fussballcal/
 │                           # Installation nach /srv/spielplanoffline/teams.txt kopiert
 ├── web/
 │   └── add_team.php        # Formular zum Hinzufügen neuer Teams +
-│                           # Übersicht aller Kalenderlinks
+│                           # Übersicht aller Kalenderlinks (mit Löschen)
 ├── nginx/
 │   └── fussballcal.conf    # nginx vhost, inkl. text/calendar MIME-Type
 └── cron/
@@ -99,7 +100,7 @@ deshalb gibt es genau eine Passwortabfrage statt fünfzehn (siehe
 | `/srv/spielplanoffline/teams.txt` | Team-Liste — **nur wenn sie noch nicht existiert**; für die Webserver-Gruppe beschreibbar (664), damit `add_team.php` Zeilen anhängen kann |
 | `/srv/spielplanoffline/spo.env` | die Pfade dieser Installation; `update_all.sh` und `selftest.sh` lesen sie |
 | `/srv/spielplanoffline/work/` | Arbeitsverzeichnis (tmp/Fonts/Output) |
-| `/var/www/fussballcal/{add_team.php,ics/}` | Webformular und Kalenderverzeichnis |
+| `/var/www/fussballcal/{add_team.php,ics/}` | Webformular und Kalenderverzeichnis; `ics/` ist für die Webserver-Gruppe beschreibbar (775), damit das Formular Kalender löschen kann |
 | `/var/www/fussballcal/config.php` | dieselben Pfade für das Formular (Pendant zu `spo.env`) |
 | `/etc/nginx/sites-{available,enabled}/fussballcal.conf` | vhost, danach `nginx -t` + Reload; Debians Default-Site wird dabei deaktiviert (sonst kommt die nginx-Welcome-Page statt fussballcal) |
 | `/var/log/spielplanoffline.log` | Logdatei (wird nie geleert) |
@@ -110,13 +111,18 @@ Hand angepasst wurde) und `--force-config` (teams.txt aus der Vorlage
 `SPO_DIR`, `WEB_DIR` und `SPO_LOG` verschieben; `WEB_GROUP` (Vorgabe
 `www-data`) ist die Gruppe des PHP-FPM-Workers.
 
-Beschreibbar für den Webserver ist ausschließlich `teams.txt` — das
-Verzeichnis darüber bleibt root. Dort liegen `update_all.sh` und der
-Vendor-Baum, die der Cron-Job als root ausführt; wären sie für den Webserver
-schreibbar, hätte ein Treffer in `add_team.php` direkt root zur Folge. Über
-`teams.txt` selbst lässt sich nichts einschleusen: `update_all.sh` akzeptiert
-nur Slugs aus `[a-z0-9_-]` und fussball.de-URLs und reicht die URL als
-Variable statt als Text in die Parameterdatei.
+Beschreibbar für den Webserver sind ausschließlich `teams.txt` und das
+Verzeichnis `ics/` (Löschen einer Datei braucht Schreibrecht auf das
+Verzeichnis, nicht auf die Datei). `/srv/spielplanoffline/` selbst bleibt
+root: dort liegen `update_all.sh` und der Vendor-Baum, die der Cron-Job als
+root ausführt; wären sie für den Webserver schreibbar, hätte ein Treffer in
+`add_team.php` direkt root zur Folge. Über `teams.txt` selbst lässt sich
+nichts einschleusen: `update_all.sh` akzeptiert nur Slugs aus `[a-z0-9_-]`
+und fussball.de-URLs und reicht die URL als Variable statt als Text in die
+Parameterdatei. Und weil `ics/` im Docroot liegt und für den Webserver
+beschreibbar ist, liefert der vhost alles unterhalb von `/ics/` per
+`location ^~ /ics/` ausnahmslos statisch aus — ohne das Präfix `^~` würde ein
+`.php` in diesem Verzeichnis an PHP-FPM gehen.
 
 Erst die Toolchain prüfen, dann einen manuellen Lauf anstoßen:
 
@@ -264,6 +270,33 @@ tail -n 40 /var/log/spielplanoffline.log
 
 Ungültige Zeilen (falscher Slug, Nicht-fussball.de-URL) werden dort mit
 Begründung protokolliert und übersprungen.
+
+### 4. Einen Kalender wieder löschen
+
+**a) Per Webformular**: auf `http://<host>/` in der Liste *Vorhandene
+Kalender* neben dem Eintrag auf *Löschen* klicken und die Rückfrage
+bestätigen. Das entfernt in einem Schritt die Zeile aus
+`/srv/spielplanoffline/teams.txt` **und** die Datei
+`/var/www/fussballcal/ics/<slug>.ics`. Kommentare und die übrigen Einträge in
+`teams.txt` bleiben unangetastet.
+
+**b) Direkt auf dem Server**:
+
+```bash
+sudo nano /srv/spielplanoffline/teams.txt          # Zeile löschen
+sudo rm /var/www/fussballcal/ics/<slug>.ics
+```
+
+Wird nur die Zeile entfernt, bleibt die ICS-Datei liegen und nginx liefert sie
+unverändert weiter aus — der Kalender friert also ein, statt zu verschwinden.
+Das Webformular räumt deshalb auch verwaiste ICS-Dateien auf: Steht ein Slug
+nicht mehr in `teams.txt`, existiert aber noch die Datei, taucht er zwar nicht
+in der Liste auf, ein Löschen über das Formular mit diesem Slug entfernt die
+Datei aber trotzdem.
+
+Ein Abo, das schon in einer Kalender-App eingerichtet ist, muss **dort**
+separat entfernt werden; nach dem Löschen auf dem Server liefert die URL nur
+noch einen 404.
 
 ## Fehlersuche: keine Datums-/Zeitangaben im Kalender
 
@@ -420,7 +453,10 @@ dann wieder unter `vendor/` eingecheckt wird (Patches nicht vergessen).
 - [ ] Rechtliche Prüfung bei öffentlicher Bereitstellung mehrerer fremder Vereine
       (siehe Hinweis unten).
 - [ ] `add_team.php` produktiv nur hinter Auth/Captcha betreiben, um Missbrauch
-      (beliebige URLs, Massen-Submits) zu verhindern.
+      (beliebige URLs, Massen-Submits) zu verhindern. Das gilt seit dem
+      *Löschen*-Knopf umso mehr: Das CSRF-Token verhindert nur, dass eine
+      fremde Seite im Namen eines Besuchers löscht — wer die Seite selbst
+      aufrufen kann, kann jeden Kalender entfernen.
 
 ## Rechtlicher Hinweis
 
