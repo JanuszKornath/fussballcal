@@ -25,12 +25,14 @@ fussballcal/
 │   │                       # (ein einziger sudo-Aufruf, idempotent)
 │   ├── update_all.sh       # Cron-Wrapper: liest teams.txt, ruft SpielplanOffline auf
 │   ├── selftest.sh         # prüft die OCR-Toolchain (ImageMagick, tesseract, Patches)
+│   ├── set_password.sh     # Zugangsdaten für das Eintrage-Formular (Basic Auth)
 │   ├── mysetup.sh          # Linux-Overrides für SpielplanOffline (Locale, kein "open")
 │   └── teams.txt.example   # Vorlage für die Team-Liste (slug;url) -> wird bei der
 │                           # Installation nach /srv/spielplanoffline/teams.txt kopiert
 ├── web/
-│   └── add_team.php        # Formular zum Hinzufügen neuer Teams +
-│                           # Übersicht aller Kalenderlinks
+│   ├── index.php           # öffentliche Übersicht aller Kalenderlinks (ohne Login)
+│   ├── add_team.php        # Formular zum Hinzufügen neuer Teams (nur mit Login)
+│   └── common.php          # gemeinsamer Unterbau beider Seiten
 ├── nginx/
 │   └── fussballcal.conf    # nginx vhost, inkl. text/calendar MIME-Type
 └── cron/
@@ -82,7 +84,7 @@ git clone https://github.com/JanuszKornath/fussballcal.git
 cd fussballcal
 
 # Alles ausrollen: SpielplanOffline aus vendor/, Wrapper, Selbsttest,
-# Linux-Overrides, Beispielkonfig, Webformular, nginx-vhost, Logdatei.
+# Linux-Overrides, Beispielkonfig, Webseiten, Zugangsdaten, nginx-vhost, Logdatei.
 sudo scripts/deploy.sh
 
 sudo crontab -e   # Inhalt aus cron/crontab.example übernehmen
@@ -95,20 +97,27 @@ deshalb gibt es genau eine Passwortabfrage statt fünfzehn (siehe
 | Ziel | Inhalt |
 |---|---|
 | `/srv/spielplanoffline/SpielplanOffline/` | das Tool aus `vendor/` inkl. Patches und `mysetup.sh` |
-| `/srv/spielplanoffline/{update_all.sh,selftest.sh}` | Wrapper und Selbsttest (ausführbar) |
+| `/srv/spielplanoffline/{update_all.sh,selftest.sh,set_password.sh}` | Wrapper, Selbsttest und Passwortverwaltung (ausführbar) |
 | `/srv/spielplanoffline/teams.txt` | Team-Liste — **nur wenn sie noch nicht existiert**; für die Webserver-Gruppe beschreibbar (664), damit `add_team.php` Zeilen anhängen kann |
 | `/srv/spielplanoffline/spo.env` | die Pfade dieser Installation; `update_all.sh` und `selftest.sh` lesen sie |
 | `/srv/spielplanoffline/work/` | Arbeitsverzeichnis (tmp/Fonts/Output) |
-| `/var/www/fussballcal/{add_team.php,ics/}` | Webformular und Kalenderverzeichnis |
-| `/var/www/fussballcal/config.php` | dieselben Pfade für das Formular (Pendant zu `spo.env`) |
+| `/var/www/fussballcal/{index.php,add_team.php,common.php,ics/}` | Übersichtsseite, Formular und Kalenderverzeichnis |
+| `/var/www/fussballcal/config.php` | dieselben Pfade für die Webseiten (Pendant zu `spo.env`) |
+| `/etc/nginx/fussballcal.htpasswd` | Zugangsdaten fürs Formular — **nur wenn sie noch nicht existieren**; beim ersten Rollout wird ein Zufallspasswort erzeugt und einmalig ausgegeben |
 | `/etc/nginx/sites-{available,enabled}/fussballcal.conf` | vhost, danach `nginx -t` + Reload; Debians Default-Site wird dabei deaktiviert (sonst kommt die nginx-Welcome-Page statt fussballcal) |
 | `/var/log/spielplanoffline.log` | Logdatei (wird nie geleert) |
 
 Optionen: `--no-nginx` (vhost und Reload überspringen, z.B. wenn der vhost von
-Hand angepasst wurde) und `--force-config` (teams.txt aus der Vorlage
-überschreiben, Sicherung als `teams.txt.bak`). Ziele lassen sich über
-`SPO_DIR`, `WEB_DIR` und `SPO_LOG` verschieben; `WEB_GROUP` (Vorgabe
-`www-data`) ist die Gruppe des PHP-FPM-Workers.
+Hand angepasst wurde), `--force-config` (teams.txt aus der Vorlage
+überschreiben, Sicherung als `teams.txt.bak`) und `--reset-password` (neues
+Zufallspasswort fürs Formular). Ziele lassen sich über `SPO_DIR`, `WEB_DIR` und
+`SPO_LOG` verschieben; `WEB_GROUP` (Vorgabe `www-data`) ist die Gruppe des
+PHP-FPM-Workers, `ADMIN_USER` (Vorgabe `admin`) der Benutzername fürs Formular.
+
+**Das Passwort aus dem ersten Rollout notieren** — es steht nur einmal auf dem
+Bildschirm und wird danach nur noch als Hash aufbewahrt. Verloren? Dann
+`sudo /srv/spielplanoffline/set_password.sh` (siehe
+[Zugang zum Formular](#zugang-zum-formular)).
 
 Beschreibbar für den Webserver ist ausschließlich `teams.txt` — das
 Verzeichnis darüber bleibt root. Dort liegen `update_all.sh` und der
@@ -147,6 +156,48 @@ unangetastet.
 
 TLS-Terminierung und Domain-Routing übernimmt euer zentraler Reverse Proxy;
 dieser nginx-vhost dient nur als internes Backend im LXC-Container (Port 80).
+
+### Zugang zum Formular
+
+Der Dienst hat zwei Seiten, und nur eine davon ist geschützt:
+
+| Seite | Zugang | Inhalt |
+|---|---|---|
+| `http://<host>/` (`index.php`) | **offen** | Liste aller Kalender mit Abo-Link und Stand der letzten Aktualisierung |
+| `http://<host>/ics/<slug>.ics` | **offen** | die Kalender selbst — Abos funktionieren nur ohne Login |
+| `http://<host>/add_team.php` | **Login** | Formular zum Eintragen neuer Mannschaften |
+
+Die Anmeldung ist HTTP-Basic-Auth: nginx prüft sie in der `location =
+/add_team.php` gegen `/etc/nginx/fussballcal.htpasswd` (siehe
+`nginx/fussballcal.conf`), der Browser fragt Benutzer und Passwort in seinem
+eigenen Dialog ab. Zusätzlich reicht der vhost den angemeldeten Namen als
+`fastcgi_param REMOTE_USER` an PHP durch: fehlt er, weigert sich `add_team.php`
+und zeigt einen Konfigurationsfehler an, statt ein offenes Formular
+auszuliefern. Wer den vhost selbst pflegt (`--no-nginx`) oder einen anderen
+Webserver benutzt, muss also beides einrichten — `auth_basic` **und** den
+`REMOTE_USER`-Parameter.
+
+Zugangsdaten pflegt `set_password.sh` (die Datei liegt außerhalb des
+Web-Verzeichnisses und gehört `root:www-data`, Rechte `640`):
+
+```bash
+sudo /srv/spielplanoffline/set_password.sh                 # Passwort für "admin" ändern
+sudo /srv/spielplanoffline/set_password.sh --user papa     # weiteren Benutzer anlegen
+sudo /srv/spielplanoffline/set_password.sh --random        # Zufallspasswort erzeugen und anzeigen
+sudo /srv/spielplanoffline/set_password.sh --remove papa   # Benutzer löschen
+```
+
+Ein nginx-Reload ist danach nicht nötig — die Datei wird bei jeder Anfrage neu
+gelesen. Gehasht wird mit `htpasswd -B` (bcrypt), falls installiert, sonst über
+`php` (ebenfalls bcrypt) oder `openssl passwd -apr1`; `apache2-utils` muss
+dafür nicht nachinstalliert werden.
+
+Zwei Dinge, die diese Anmeldung *nicht* leistet: Die Zugangsdaten gehen bei
+Basic Auth nur base64-kodiert über die Leitung — das ist hier in Ordnung, weil
+der vorgelagerte Reverse Proxy TLS terminiert und der vhost selbst nur
+containerintern auf Port 80 lauscht; ohne TLS davor sollte der Dienst nicht ins
+Internet. Und die fertigen Kalender bleiben absichtlich öffentlich: wer die
+`ics`-Adresse kennt, kann sie abonnieren. Geschützt ist nur das *Eintragen*.
 
 ### Fehlersuche: es erscheint die nginx-Welcome-Page
 
@@ -198,9 +249,11 @@ Der `#!/...`-Teil am Ende darf drin bleiben. Andere fussball.de-Seiten
 Es gibt zwei Wege — beide schreiben in dieselbe Datei
 `/srv/spielplanoffline/teams.txt` auf dem Server:
 
-**a) Per Webformular** (der bequeme Weg): `http://<host>/` im Browser öffnen
-(`add_team.php`), Link und Kurznamen eintragen, absenden. Das Formular
-akzeptiert nur `https://www.fussball.de/`-Links.
+**a) Per Webformular** (der bequeme Weg): `http://<host>/add_team.php` im
+Browser öffnen — der Browser fragt nach Benutzer und Passwort (siehe
+[Zugang zum Formular](#zugang-zum-formular)) —, Link und Kurznamen eintragen,
+absenden. Das Formular akzeptiert nur `https://www.fussball.de/`-Links. Von der
+öffentlichen Startseite führt unten ein Link dorthin.
 
 **b) Direkt in der Datei** (z.B. für viele Teams auf einmal):
 
@@ -235,8 +288,9 @@ https://<host>/ics/<slug>.ics       # dieselbe Datei zum Herunterladen
 Für das Beispiel oben also `webcal://<host>/ics/tsv_musterstadt_1.ics`.
 
 **Alle Links auf einen Blick** listet die Startseite `http://<host>/`
-(`add_team.php`) unterhalb des Formulars auf — mit „Abonnieren"-Link und dem
-Zeitpunkt der letzten Aktualisierung. Auf dem Server direkt:
+(`index.php`) auf — mit „Abonnieren"-Link und dem Zeitpunkt der letzten
+Aktualisierung. Diese Seite braucht keine Anmeldung und kann so an alle
+weitergegeben werden, die nur abonnieren wollen. Auf dem Server direkt:
 
 ```bash
 ls -l /var/www/fussballcal/ics/
@@ -419,8 +473,10 @@ Eingrenzung; im Zweifel ist eine neuere SpielplanOffline-Version nötig, die
 dann wieder unter `vendor/` eingecheckt wird (Patches nicht vergessen).
 - [ ] Rechtliche Prüfung bei öffentlicher Bereitstellung mehrerer fremder Vereine
       (siehe Hinweis unten).
-- [ ] `add_team.php` produktiv nur hinter Auth/Captcha betreiben, um Missbrauch
-      (beliebige URLs, Massen-Submits) zu verhindern.
+- [x] `add_team.php` liegt hinter HTTP-Basic-Auth, die Kalenderübersicht
+      (`index.php`) und die `ics`-Dateien bleiben offen zugänglich (siehe
+      [Zugang zum Formular](#zugang-zum-formular)). Massen-Submits durch
+      Unbefugte sind damit erledigt; ein Captcha braucht es nicht mehr.
 
 ## Rechtlicher Hinweis
 
