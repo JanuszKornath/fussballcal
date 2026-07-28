@@ -20,6 +20,7 @@
 #   sudo ./deploy.sh            # genauso gut
 #   sudo ./deploy.sh --no-nginx # vhost und nginx-Reload überspringen
 #   sudo ./deploy.sh --force-config   # teams.txt mit der Vorlage überschreiben
+#   sudo ./deploy.sh --reset-password # neues Zufallspasswort fürs Formular
 #
 # Das Skript ist idempotent: es darf nach jedem `git pull` erneut laufen. Die
 # aktive teams.txt wird dabei NICHT angefasst (außer mit --force-config).
@@ -30,7 +31,7 @@ set -euo pipefail
 # sudo setzt die Umgebung zurück (env_reset), die Overrides müssen bei der
 # Eskalation weiter unten also ausdrücklich mitgegeben werden.
 env_overrides=()
-for var in SPO_DIR WEB_DIR SPO_LOG WEB_GROUP; do
+for var in SPO_DIR WEB_DIR SPO_LOG WEB_GROUP ADMIN_USER; do
     if [ -n "${!var-}" ]; then
         env_overrides+=("$var=${!var}")
     fi
@@ -44,18 +45,24 @@ WEB_GROUP="${WEB_GROUP:-www-data}"
 NGINX_CONF="/etc/nginx/sites-available/fussballcal.conf"
 NGINX_LINK="/etc/nginx/sites-enabled/fussballcal.conf"
 # Debians Default-vhost; wird deaktiviert, damit fussballcal der
-# default_server auf Port 80 ist (siehe Abschnitt 7).
+# default_server auf Port 80 ist (siehe Abschnitt 8).
 NGINX_DEFAULT_LINK="/etc/nginx/sites-enabled/default"
+# Zugangsdaten fürs Eintrage-Formular. Der Pfad steht so auch im vhost
+# (nginx/fussballcal.conf, auth_basic_user_file) — beide müssen zusammenpassen.
+HTPASSWD_FILE="/etc/nginx/fussballcal.htpasswd"
+ADMIN_USER="${ADMIN_USER:-admin}"
 
 with_nginx=1
 force_config=0
+reset_password=0
 
 for arg in "$@"; do
     case "$arg" in
-        --no-nginx)     with_nginx=0 ;;
-        --force-config) force_config=1 ;;
+        --no-nginx)       with_nginx=0 ;;
+        --force-config)   force_config=1 ;;
+        --reset-password) reset_password=1 ;;
         -h|--help)
-            sed -n '3,26p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '3,27p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         *)
             echo "Unbekannte Option: $arg (siehe --help)" >&2
@@ -124,9 +131,10 @@ info "Linux-Overrides: mysetup.sh"
 # ------------------------------------------------------------------
 # 3. Wrapper und Selbsttest
 # ------------------------------------------------------------------
-install -m 755 "$REPO_DIR/scripts/update_all.sh" "$SPO_DIR/update_all.sh"
-install -m 755 "$REPO_DIR/scripts/selftest.sh"   "$SPO_DIR/selftest.sh"
-info "Skripte: update_all.sh, selftest.sh"
+install -m 755 "$REPO_DIR/scripts/update_all.sh"    "$SPO_DIR/update_all.sh"
+install -m 755 "$REPO_DIR/scripts/selftest.sh"      "$SPO_DIR/selftest.sh"
+install -m 755 "$REPO_DIR/scripts/set_password.sh" "$SPO_DIR/set_password.sh"
+info "Skripte: update_all.sh, selftest.sh, set_password.sh"
 
 # Pfade dieser Installation für die installierten Skripte festhalten. Ohne das
 # behielten update_all.sh und selftest.sh ihre eingebauten Vorgaben und würden
@@ -190,9 +198,14 @@ fi
 
 # ------------------------------------------------------------------
 # 6. Weboberfläche
+#    index.php ist die öffentliche Kalenderübersicht, add_team.php das
+#    Formular hinter der Basic-Auth (siehe Abschnitt 7), common.php der
+#    gemeinsame Unterbau beider Seiten.
 # ------------------------------------------------------------------
+install -m 644 "$REPO_DIR/web/common.php"   "$WEB_DIR/common.php"
+install -m 644 "$REPO_DIR/web/index.php"    "$WEB_DIR/index.php"
 install -m 644 "$REPO_DIR/web/add_team.php" "$WEB_DIR/add_team.php"
-info "Webformular: $WEB_DIR/add_team.php"
+info "Webseiten: $WEB_DIR/{index,add_team,common}.php"
 
 # Pendant zu spo.env für die PHP-Seite: ohne diese Datei zeigte das Formular
 # bei verschobenem Rollout weiter auf /srv/spielplanoffline und schriebe in
@@ -212,7 +225,34 @@ chmod 644 "$WEB_DIR/config.php"
 info "Pfade fürs Formular: $WEB_DIR/config.php"
 
 # ------------------------------------------------------------------
-# 7. nginx-vhost — nur neu laden, wenn sich wirklich etwas geändert hat.
+# 7. Zugangsdaten für das Eintrage-Formular
+#    add_team.php liegt im vhost hinter auth_basic. Fehlt die Passwortdatei,
+#    antwortet nginx dort mit 500 — deshalb wird sie beim ersten Rollout mit
+#    einem Zufallspasswort angelegt und einmalig ausgegeben. Ein zweiter
+#    Rollout fasst vorhandene Zugangsdaten nicht an (außer --reset-password).
+# ------------------------------------------------------------------
+new_credentials=""
+if [ -d "$(dirname "$HTPASSWD_FILE")" ]; then
+    if [ "$reset_password" -eq 1 ] || [ ! -s "$HTPASSWD_FILE" ]; then
+        if new_credentials="$(HTPASSWD_FILE="$HTPASSWD_FILE" WEB_GROUP="$WEB_GROUP" \
+                bash "$REPO_DIR/scripts/set_password.sh" \
+                     --user "$ADMIN_USER" --random 2>&1)"; then
+            info "Zugangsdaten erzeugt: $HTPASSWD_FILE (Benutzer $ADMIN_USER)"
+        else
+            echo "WARNUNG: Zugangsdaten konnten nicht angelegt werden:" >&2
+            echo "$new_credentials" >&2
+            echo "  -> $SPO_DIR/set_password.sh von Hand aufrufen." >&2
+            new_credentials=""
+        fi
+    else
+        info "Zugangsdaten vorhanden: $HTPASSWD_FILE (unverändert)"
+    fi
+else
+    info "$(dirname "$HTPASSWD_FILE") fehlt — keine Zugangsdaten angelegt"
+fi
+
+# ------------------------------------------------------------------
+# 8. nginx-vhost — nur neu laden, wenn sich wirklich etwas geändert hat.
 # ------------------------------------------------------------------
 if [ "$with_nginx" -eq 1 ] && [ -d "$(dirname "$NGINX_CONF")" ]; then
     changed=0
@@ -252,12 +292,25 @@ elif [ "$with_nginx" -eq 1 ]; then
 fi
 
 echo "------------------------------------------------------------------"
+
+if [ -n "$new_credentials" ]; then
+    echo
+    echo "=== Zugangsdaten für /add_team.php ==============================="
+    echo "$new_credentials"
+    echo "=================================================================="
+    echo
+fi
+
 cat <<EOF
 Fertig. Nächste Schritte:
 
   $SPO_DIR/selftest.sh        # OCR-Toolchain prüfen
   $SPO_DIR/update_all.sh      # Lauf sofort anstoßen
   tail -n 40 $LOG_FILE
+
+Die Kalenderübersicht liegt offen unter  http://<host>/
+Eingetragen wird nur mit Anmeldung unter http://<host>/add_team.php
+Passwort ändern: $SPO_DIR/set_password.sh [--user NAME]
 
 Der Cron-Job wird separat eingerichtet (cron/crontab.example).
 EOF
