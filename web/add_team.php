@@ -2,19 +2,29 @@
 /**
  * add_team.php
  *
- * Formular, um Fussball.de-Links zur teams.txt hinzuzufügen. Läuft der
- * Cron-Job danach (siehe update_all.sh), wird automatisch eine ICS-Datei
- * erzeugt. Die öffentliche Übersicht der fertigen Kalender ist index.php.
+ * Formular, um Fussball.de-Links zur teams.txt hinzuzufügen und eingetragene
+ * Kalender wieder zu löschen. Läuft der Cron-Job danach (siehe update_all.sh),
+ * wird automatisch eine ICS-Datei erzeugt. Die öffentliche Übersicht der
+ * fertigen Kalender ist index.php — dort ohne Formular und ohne Löschen.
  *
  * SICHERHEIT:
  * - Diese Seite liegt hinter der Basic-Auth des vhosts (nginx: auth_basic,
  *   Zugangsdaten via scripts/set_password.sh). Ohne authentifizierten
  *   Benutzer bricht requireUser() ab, statt ein offenes Formular zu zeigen.
+ *   Damit hängt auch das Löschen hinter der Anmeldung: index.php ruft
+ *   renderCalendars() ohne Token auf und zeigt deshalb keine Knöpfe, und die
+ *   Verarbeitung steckt ohnehin nur hier — hinter requireUser().
  * - Nur fussball.de-URLs werden akzeptiert.
  * - Slug wird auf [a-z0-9_-] beschränkt (Whitelist, kein Escaping nötig,
- *   da ungültige Zeichen komplett verworfen werden).
+ *   da ungültige Zeichen komplett verworfen werden). Beim Löschen ist das
+ *   zugleich der Schutz gegen Pfad-Traversal: aus dem Slug wird ein
+ *   Dateiname, "../" o.ä. kommt gar nicht erst durch.
  * - Die URL wird NIE in einen Shell-Befehl eingebaut (das übernimmt
  *   ausschließlich update_all.sh mit escapten/validierten Werten).
+ * - Löschen (destruktiv) läuft nur per POST und nur mit gültigem CSRF-Token.
+ *   Basic-Auth allein reicht dafür nicht: Der Browser hängt die Zugangsdaten
+ *   an jede Anfrage an diese Adresse, auch an eine, die eine fremde Seite
+ *   auslöst.
  */
 
 declare(strict_types=1);
@@ -24,13 +34,32 @@ require_once __DIR__ . '/common.php';
 // Vor jeder Ausgabe und vor jeder Verarbeitung: nur authentifiziert weiter.
 $user = requireUser();
 
+// CSRF-Token in der Session, gegen Anfragen, die eine fremde Seite im Namen
+// des angemeldeten Benutzers absendet.
+session_start();
+if (!isset($_SESSION['csrf']) || !is_string($_SESSION['csrf'])) {
+    $_SESSION['csrf'] = bin2hex(random_bytes(16));
+}
+$csrf = $_SESSION['csrf'];
+
 $slug = '';
 $url = '';
 $message = '';
 $success = false;
 $host = baseHost();
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !hash_equals($csrf, (string)($_POST['csrf'] ?? ''))) {
+    // Typischer Fall: die Seite lag lange offen und die Session ist abgelaufen.
+    $message = 'Sitzung abgelaufen — bitte die Seite neu laden und noch einmal versuchen.';
+} elseif (($_POST['action'] ?? '') === 'delete') {
+    $delSlug = strtolower(preg_replace('/[^a-zA-Z0-9_-]/', '', trim((string)($_POST['slug'] ?? ''))) ?? '');
+
+    if ($delSlug === '') {
+        $message = 'Kein Kalender zum Löschen angegeben.';
+    } else {
+        [$success, $message] = deleteTeam($delSlug);
+    }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $rawSlug = trim((string)($_POST['slug'] ?? ''));
     $rawUrl  = trim((string)($_POST['url'] ?? ''));
 
@@ -72,8 +101,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Erst nach dem POST einlesen, damit ein gerade hinzugefügtes Team sofort
-// in der Liste auftaucht.
+// Erst nach dem POST einlesen, damit ein gerade hinzugefügtes Team sofort in
+// der Liste auftaucht und ein gerade gelöschtes daraus verschwindet.
 $teams = readTeams();
 ?>
 <!DOCTYPE html>
@@ -98,6 +127,7 @@ $teams = readTeams();
        <code>.../verein/…</code>).</p>
 
     <form method="post">
+        <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrf) ?>">
         <label>Fussball.de-Link
             <input type="url" name="url" required placeholder="https://www.fussball.de/mannschaft/..." value="<?= htmlspecialchars($url) ?>">
         </label>
@@ -112,7 +142,9 @@ $teams = readTeams();
     <?php endif; ?>
 
     <h2>Vorhandene Kalender</h2>
-    <?php renderCalendars($teams, $host); ?>
+    <?php // Mit Token: dieselbe Liste wie auf der Startseite, zusätzlich mit
+          // Löschen-Knöpfen. ?>
+    <?php renderCalendars($teams, $host, $csrf); ?>
 
     <p class="nav">Die öffentliche Übersicht zum Weitergeben:
        <a href="/">Startseite</a> — dort steht dieselbe Liste ohne Anmeldung
