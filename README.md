@@ -235,13 +235,23 @@ lauscht nginx** und **wer darf fragen**. Für beides gibt es eine Variable beim
 Rollout:
 
 ```bash
-sudo LISTEN_ADDR=10.0.0.42 TRUSTED_PROXY=10.0.0.1 scripts/deploy.sh
+sudo LISTEN_ADDR=10.0.0.42 TRUSTED_PROXY=10.0.0.0/24 scripts/deploy.sh
 ```
+
+Beide sind **optional**: Ohne sie verhält sich der Rollout wie bisher — Port 80
+auf allen Adressen, keine Herkunftsprüfung. Im Repo steht keine Adresse, und
+abgefragt wird auch nichts; wer die Variablen nicht setzt, merkt von beidem
+nichts.
 
 **`LISTEN_ADDR`** bindet Port 80 an genau eine Adresse — auf allen anderen
 Interfaces existiert der Port danach nicht mehr (`ss -ltn` zeigt es). Das ist
 die wirksamste Einzelmaßnahme, wenn der Container außer dem internen Netz noch
 irgendetwas anderes sieht. Ohne die Variable bleibt es bei allen Adressen.
+
+> Nur mit **fester** Container-Adresse benutzen. Hängt die Adresse an DHCP oder
+> kommt das Netz erst nach nginx hoch, findet nginx beim Start nichts zum
+> Binden und verweigert den Dienst. Im Zweifel `LISTEN_ADDR` weglassen und die
+> Abgrenzung der Firewall überlassen.
 
 > Ein Wechsel der `listen`-Adresse braucht einen **Neustart**, keinen Reload:
 > nginx öffnet beim Reload die neuen Lauschsockets, bevor es die alten
@@ -249,14 +259,17 @@ irgendetwas anderes sieht. Ohne die Variable bleibt es bei allen Adressen.
 > still, denn `nginx -t` und `systemctl reload` melden trotzdem Erfolg.
 > `deploy.sh` erkennt den Fall und startet in dem Fall neu.
 
-**`TRUSTED_PROXY`** ist die Adresse (oder das Netz, z.B. `10.0.0.0/24`) des
-Reverse Proxys. Gesetzt bewirkt sie zweierlei: Anfragen von jeder anderen
-Gegenstelle beantwortet der vhost mit `403` — auch auf `/ics/` —, und die
-echten Client-Adressen werden aus `X-Forwarded-For` übernommen, aber nur von
-dieser Gegenstelle. Ohne das zählte das Rate-Limit oben alle Besucher als
-einen einzigen (nginx sähe ja nur den Proxy), und ein einzelner Angreifer
-sperrte damit alle anderen aus. Ist die Variable nicht gesetzt, antwortet der
-vhost wie bisher jedem — `deploy.sh` weist am Ende darauf hin.
+**`TRUSTED_PROXY`** ist die Herkunft des Reverse Proxys — besser gleich als
+Netz (`10.0.0.0/24`) statt als einzelne Adresse: Das überlebt einen
+Adresswechsel des Proxys, und eine Einzel-IP hieße, dass der Dienst nach so
+einem Wechsel niemandem mehr antwortet. Gesetzt bewirkt sie zweierlei:
+Anfragen von jeder anderen Gegenstelle beantwortet der vhost mit `403` — auch
+auf `/ics/` —, und die echten Client-Adressen werden aus `X-Forwarded-For`
+übernommen, aber nur von dieser Herkunft. Ohne das zählte das Rate-Limit oben
+alle Besucher als einen einzigen (nginx sähe ja nur den Proxy), und ein
+einzelner Angreifer sperrte damit alle anderen aus. Ist die Variable nicht
+gesetzt, antwortet der vhost wie bisher jedem — `deploy.sh` weist am Ende
+darauf hin.
 
 Beides ersetzt **keine Firewall**; es ist die Schicht darunter, falls der
 Container doch einmal direkt erreichbar ist. Die harte Grenze zieht der Host:
