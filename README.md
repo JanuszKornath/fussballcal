@@ -108,6 +108,7 @@ deshalb gibt es genau eine Passwortabfrage statt fünfzehn (siehe
 | `/var/www/fussballcal/config.php` | dieselben Pfade für die Webseiten (Pendant zu `spo.env`) |
 | `/etc/nginx/fussballcal.htpasswd` | Zugangsdaten fürs Formular — **nur wenn sie noch nicht existieren**; beim ersten Rollout wird ein Zufallspasswort erzeugt und einmalig ausgegeben |
 | `/etc/nginx/sites-{available,enabled}/fussballcal.conf` | vhost, danach `nginx -t` + Reload; Debians Default-Site wird dabei deaktiviert (sonst kommt die nginx-Welcome-Page statt fussballcal) |
+| `/etc/nginx/conf.d/fussballcal.conf` | http-Kontext des vhosts: Rate-Limit-Zone fürs Formular und die Proxy-Prüfung (`TRUSTED_PROXY`) — wird bei **jedem** Rollout neu geschrieben |
 | `/var/log/spielplanoffline.log` | Logdatei (wird nie geleert) |
 
 Optionen: `--no-nginx` (vhost und Reload überspringen, z.B. wenn der vhost von
@@ -116,6 +117,8 @@ Hand angepasst wurde), `--force-config` (teams.txt aus der Vorlage
 Zufallspasswort fürs Formular). Ziele lassen sich über `SPO_DIR`, `WEB_DIR` und
 `SPO_LOG` verschieben; `WEB_GROUP` (Vorgabe `www-data`) ist die Gruppe des
 PHP-FPM-Workers, `ADMIN_USER` (Vorgabe `admin`) der Benutzername fürs Formular.
+`LISTEN_ADDR` und `TRUSTED_PROXY` gehören zum Betrieb am öffentlichen Netz und
+sind unten beschrieben.
 
 **Das Passwort aus dem ersten Rollout notieren** — es steht nur einmal auf dem
 Bildschirm und wird danach nur noch als Hash aufbewahrt. Verloren? Dann
@@ -207,16 +210,72 @@ sudo /srv/spielplanoffline/set_password.sh --remove papa   # Benutzer löschen
 ```
 
 Ein nginx-Reload ist danach nicht nötig — die Datei wird bei jeder Anfrage neu
-gelesen. Gehasht wird mit `htpasswd -B` (bcrypt), falls installiert, sonst über
-`php` (ebenfalls bcrypt) oder `openssl passwd -apr1`; `apache2-utils` muss
-dafür nicht nachinstalliert werden.
+gelesen. Gehasht wird mit `htpasswd -B -C 12` (bcrypt), falls installiert, sonst
+über `php` (ebenfalls bcrypt) oder `openssl passwd -apr1`; `apache2-utils` muss
+dafür nicht nachinstalliert werden. Das `-C 12` ist kein Detail: `htpasswd`
+rechnet bcrypt sonst mit Kostenfaktor 5, also rund hundertmal billiger.
+
+Gegen Passwort-Raten steht vor dem Formular ein Rate-Limit — Basic Auth kennt
+selbst keine Sperre nach n Fehlversuchen. Erlaubt ist im Schnitt eine Anfrage
+pro Sekunde mit kurzen Spitzen bis fünf, danach antwortet nginx mit `429`. Die
+öffentliche Übersicht und die `ics`-Dateien sind davon nicht betroffen.
 
 Zwei Dinge, die diese Anmeldung *nicht* leistet: Die Zugangsdaten gehen bei
-Basic Auth nur base64-kodiert über die Leitung — das ist hier in Ordnung, weil
-der vorgelagerte Reverse Proxy TLS terminiert und der vhost selbst nur
-containerintern auf Port 80 lauscht; ohne TLS davor sollte der Dienst nicht ins
-Internet. Und die fertigen Kalender bleiben absichtlich öffentlich: wer die
-`ics`-Adresse kennt, kann sie abonnieren. Geschützt ist nur das *Eintragen*.
+Basic Auth nur base64-kodiert über die Leitung — das ist in Ordnung, solange
+der vorgelagerte Reverse Proxy TLS terminiert; ohne TLS davor gehört der Dienst
+nicht ins Internet. Und die fertigen Kalender bleiben absichtlich öffentlich:
+wer die `ics`-Adresse kennt, kann sie abonnieren. Geschützt ist nur das
+*Eintragen* und *Löschen*.
+
+### Absicherung im öffentlichen Netz
+
+Der vhost ist als internes Backend hinter einem Reverse Proxy gedacht. Sobald
+der Dienst aus dem Internet erreichbar ist, sind zwei Fragen zu klären: **worauf
+lauscht nginx** und **wer darf fragen**. Für beides gibt es eine Variable beim
+Rollout:
+
+```bash
+sudo LISTEN_ADDR=10.0.0.42 TRUSTED_PROXY=10.0.0.1 scripts/deploy.sh
+```
+
+**`LISTEN_ADDR`** bindet Port 80 an genau eine Adresse — auf allen anderen
+Interfaces existiert der Port danach nicht mehr (`ss -ltn` zeigt es). Das ist
+die wirksamste Einzelmaßnahme, wenn der Container außer dem internen Netz noch
+irgendetwas anderes sieht. Ohne die Variable bleibt es bei allen Adressen.
+
+> Ein Wechsel der `listen`-Adresse braucht einen **Neustart**, keinen Reload:
+> nginx öffnet beim Reload die neuen Lauschsockets, bevor es die alten
+> schließt, und scheitert dann am eigenen Socket (`Address already in use`) —
+> still, denn `nginx -t` und `systemctl reload` melden trotzdem Erfolg.
+> `deploy.sh` erkennt den Fall und startet in dem Fall neu.
+
+**`TRUSTED_PROXY`** ist die Adresse (oder das Netz, z.B. `10.0.0.0/24`) des
+Reverse Proxys. Gesetzt bewirkt sie zweierlei: Anfragen von jeder anderen
+Gegenstelle beantwortet der vhost mit `403` — auch auf `/ics/` —, und die
+echten Client-Adressen werden aus `X-Forwarded-For` übernommen, aber nur von
+dieser Gegenstelle. Ohne das zählte das Rate-Limit oben alle Besucher als
+einen einzigen (nginx sähe ja nur den Proxy), und ein einzelner Angreifer
+sperrte damit alle anderen aus. Ist die Variable nicht gesetzt, antwortet der
+vhost wie bisher jedem — `deploy.sh` weist am Ende darauf hin.
+
+Beides ersetzt **keine Firewall**; es ist die Schicht darunter, falls der
+Container doch einmal direkt erreichbar ist. Die harte Grenze zieht der Host:
+
+```bash
+# nftables: Port 80 nur vom Reverse Proxy
+sudo nft add rule inet filter input tcp dport 80 ip saddr != 10.0.0.1 drop
+# oder mit ufw
+sudo ufw allow from 10.0.0.1 to any port 80 proto tcp
+sudo ufw deny 80/tcp
+```
+
+Was am Ende zählt, steht damit an drei Stellen, und keine davon ist überflüssig:
+Routing/NAT auf dem Host entscheidet, was den Container überhaupt erreicht, die
+Firewall filtert den Rest, und `LISTEN_ADDR`/`TRUSTED_PROXY` sorgen dafür, dass
+nginx auch dann nicht antwortet, wenn die beiden anderen einmal falsch stehen.
+
+Was sonst noch mehr bringt als jede Änderung an diesem Code: automatische
+Sicherheitsupdates für nginx und PHP (`unattended-upgrades`).
 
 ### Fehlersuche: es erscheint die nginx-Welcome-Page
 
@@ -526,6 +585,14 @@ Passwortabfrage bleiben.
       Löschen liegt hinter derselben Anmeldung und zusätzlich hinter einem
       CSRF-Token — Basic-Auth allein schützt nicht davor, dass eine fremde
       Seite eine Anfrage im Namen des angemeldeten Benutzers auslöst.
+- [x] Härtung für den Betrieb am öffentlichen Netz: Rate-Limit vor dem
+      Formular, `LISTEN_ADDR` (Port 80 nur auf einer Adresse) und
+      `TRUSTED_PROXY` (nur der Reverse Proxy bekommt Antworten), bcrypt mit
+      Kostenfaktor 12 auch im `htpasswd`-Zweig, keine Versionsnummern in
+      Server- und `X-Powered-By`-Header (siehe
+      [Absicherung im öffentlichen Netz](#absicherung-im-öffentlichen-netz)).
+- [ ] Automatische Sicherheitsupdates (`unattended-upgrades`) auf dem Server
+      einrichten — steht außerhalb dieses Repos, gehört aber dazu.
 
 Fussball.de ändert Layout und Font-Obfuskation regelmäßig. Wenn die
 Datumsangaben irgendwann wieder fehlen, führt der Abschnitt

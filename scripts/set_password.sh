@@ -68,8 +68,11 @@ hash_password() {
     local pw="$1"
 
     if command -v htpasswd >/dev/null 2>&1; then
-        # -n: nur ausgeben, -i: Passwort von stdin, -B: bcrypt
-        printf '%s' "$pw" | htpasswd -niB "$user" | head -n 1 | cut -d: -f2-
+        # -n: nur ausgeben, -i: Passwort von stdin, -B: bcrypt.
+        # -C 12 ist wichtig: htpasswd rechnet bcrypt sonst mit Kostenfaktor 5,
+        # also rund hundertmal billiger als das, was PHP unten erzeugt. Immer
+        # noch bcrypt, aber unnötig leicht durchzuprobieren.
+        printf '%s' "$pw" | htpasswd -niB -C 12 "$user" | head -n 1 | cut -d: -f2-
     elif command -v php >/dev/null 2>&1; then
         # bcrypt ($2y$) versteht nginx über crypt(3) — auf Linux (libxcrypt) ist
         # das der gleiche Hash, den htpasswd -B schreiben würde.
