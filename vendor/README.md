@@ -7,10 +7,11 @@ externen Quellen nachgeladen.
 
 ## Lokale Patches
 
-SpielplanOffline ist für macOS geschrieben. Zwei Stellen funktionieren unter
-Debian/Ubuntu nicht und sind hier **lokal gepatcht**. Beide Patches sind im
-Quelltext mit `LOKALER PATCH (fussballcal)` kommentiert und werden von
-`scripts/selftest.sh` geprüft.
+SpielplanOffline ist für macOS geschrieben. Drei Stellen funktionieren unter
+Debian/Ubuntu nicht und sind hier **lokal gepatcht** (zwei in `runscript.awk`,
+eine in `iconv.perl`). Alle drei Patches sind im Quelltext mit
+`LOKALER PATCH (fussballcal)` kommentiert und werden von `scripts/selftest.sh`
+geprüft.
 
 ### 1. `runscript.awk` — ImageMagick-Sicherheitsrichtlinie
 
