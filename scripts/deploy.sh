@@ -22,6 +22,10 @@
 #   sudo ./deploy.sh --force-config   # teams.txt mit der Vorlage überschreiben
 #   sudo ./deploy.sh --reset-password # neues Zufallspasswort fürs Formular
 #
+# Für den Betrieb am öffentlichen Netz (siehe README):
+#   sudo LISTEN_ADDR=10.0.0.42 ./deploy.sh    # Port 80 nur auf dieser Adresse
+#   sudo TRUSTED_PROXY=10.0.0.1 ./deploy.sh   # nur der Reverse Proxy darf fragen
+#
 # Das Skript ist idempotent: es darf nach jedem `git pull` erneut laufen. Die
 # aktive teams.txt wird dabei NICHT angefasst (außer mit --force-config).
 
@@ -31,7 +35,7 @@ set -euo pipefail
 # sudo setzt die Umgebung zurück (env_reset), die Overrides müssen bei der
 # Eskalation weiter unten also ausdrücklich mitgegeben werden.
 env_overrides=()
-for var in SPO_DIR WEB_DIR SPO_LOG WEB_GROUP ADMIN_USER; do
+for var in SPO_DIR WEB_DIR SPO_LOG WEB_GROUP ADMIN_USER LISTEN_ADDR TRUSTED_PROXY; do
     if [ -n "${!var-}" ]; then
         env_overrides+=("$var=${!var}")
     fi
@@ -51,6 +55,15 @@ NGINX_DEFAULT_LINK="/etc/nginx/sites-enabled/default"
 # (nginx/fussballcal.conf, auth_basic_user_file) — beide müssen zusammenpassen.
 HTPASSWD_FILE="/etc/nginx/fussballcal.htpasswd"
 ADMIN_USER="${ADMIN_USER:-admin}"
+# http-Kontext des vhosts (Rate-Limit-Zone, Real-IP, Peer-Prüfung). Debians
+# nginx.conf bindet conf.d/*.conf vor sites-enabled/ ein.
+NGINX_HTTP_CONF="/etc/nginx/conf.d/fussballcal.conf"
+# Adresse, an die der vhost gebunden wird. Leer = alle Interfaces (Vorgabe).
+LISTEN_ADDR="${LISTEN_ADDR:-}"
+# Adresse des vorgelagerten Reverse Proxys. Gesetzt bedeutet: nur von dort
+# werden Anfragen beantwortet, und die echten Client-IPs kommen aus
+# X-Forwarded-For (sonst zählte das Rate-Limit alle Besucher als einen).
+TRUSTED_PROXY="${TRUSTED_PROXY:-}"
 
 with_nginx=1
 force_config=0
@@ -62,7 +75,7 @@ for arg in "$@"; do
         --force-config)   force_config=1 ;;
         --reset-password) reset_password=1 ;;
         -h|--help)
-            sed -n '3,27p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '3,31p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         *)
             echo "Unbekannte Option: $arg (siehe --help)" >&2
@@ -265,11 +278,114 @@ fi
 # ------------------------------------------------------------------
 if [ "$with_nginx" -eq 1 ] && [ -d "$(dirname "$NGINX_CONF")" ]; then
     changed=0
-    if ! cmp -s "$REPO_DIR/nginx/fussballcal.conf" "$NGINX_CONF"; then
-        install -m 644 "$REPO_DIR/nginx/fussballcal.conf" "$NGINX_CONF"
+
+    # http-Kontext: Rate-Limit-Zone und Peer-Prüfung. Beides muss außerhalb des
+    # server-Blocks stehen, deshalb eine eigene Datei unter conf.d/. Sie wird
+    # hier erzeugt, weil erst der Rollout die Adresse des Reverse Proxys kennt.
+    nginx_http_tmp="$(mktemp)"
+    {
+        cat <<'EOF'
+# Von deploy.sh erzeugt — http-Kontext für fussballcal. Nicht von Hand ändern,
+# der nächste Rollout überschreibt die Datei (Werte über TRUSTED_PROXY setzen).
+
+# Bremse gegen Passwort-Raten am Formular; benutzt wird die Zone in der
+# location = /add_team.php des vhosts. 10 MB fassen rund 160.000 Adressen.
+limit_req_zone $binary_remote_addr zone=fussballcal_login:10m rate=1r/s;
+EOF
+        if [ -n "$TRUSTED_PROXY" ]; then
+            cat <<EOF
+
+# Hinter dem Reverse Proxy sieht nginx sonst nur dessen Adresse — dann teilten
+# sich alle Besucher ein Rate-Limit-Konto. X-Forwarded-For wird deshalb als
+# echte Client-Adresse übernommen, aber ausschließlich von $TRUSTED_PROXY:
+# aus dem Netz gesetzte Header sind damit wirkungslos.
+set_real_ip_from $TRUSTED_PROXY;
+real_ip_header X-Forwarded-For;
+
+# \$realip_remote_addr ist die Adresse der Gegenstelle, unabhängig von
+# X-Forwarded-For. Alles außer dem Proxy (und dem Rechner selbst) weist der
+# vhost mit 403 ab. geo statt map, weil geo auch Netzbereiche (10.0.0.0/24)
+# versteht — map vergliche stur die Zeichenkette.
+geo \$realip_remote_addr \$fussballcal_untrusted_peer {
+    default 1;
+EOF
+            # Doppelte Einträge lässt geo nicht durchgehen ("duplicate
+            # network") — der Proxy kann selbst localhost sein.
+            emitted_nets=""
+            for net in "$TRUSTED_PROXY" 127.0.0.1 ::1; do
+                case " $emitted_nets " in
+                    *" $net "*) continue ;;
+                esac
+                emitted_nets="$emitted_nets $net"
+                printf '    %-18s 0;\n' "$net"
+            done
+            echo "}"
+        else
+            cat <<'EOF'
+
+# TRUSTED_PROXY war beim Rollout nicht gesetzt: Der vhost antwortet jedem, der
+# ihn erreicht. Wer den Dienst öffentlich betreibt, sollte das setzen —
+# siehe README, "Absicherung im öffentlichen Netz".
+geo $realip_remote_addr $fussballcal_untrusted_peer {
+    default 0;
+}
+EOF
+        fi
+    } >"$nginx_http_tmp"
+
+    if ! cmp -s "$nginx_http_tmp" "$NGINX_HTTP_CONF"; then
+        install -d -m 755 "$(dirname "$NGINX_HTTP_CONF")"
+        install -m 644 "$nginx_http_tmp" "$NGINX_HTTP_CONF"
+        changed=1
+        info "http-Kontext aktualisiert: $NGINX_HTTP_CONF"
+    fi
+    rm -f "$nginx_http_tmp"
+
+    if [ -n "$TRUSTED_PROXY" ]; then
+        info "Nur Anfragen von $TRUSTED_PROXY werden beantwortet"
+    fi
+
+    # vhost. Bei gesetztem LISTEN_ADDR wird die listen-Zeile beim Ausrollen
+    # umgeschrieben — nginx kennt keine Variablen in `listen`, und die Datei im
+    # Repo soll für sich allein gültig bleiben.
+    vhost_tmp="$(mktemp)"
+    if [ -n "$LISTEN_ADDR" ]; then
+        # IPv6-Literale gehören in eckige Klammern.
+        case "$LISTEN_ADDR" in
+            *:*) listen_spec="[$LISTEN_ADDR]:80" ;;
+            *)   listen_spec="$LISTEN_ADDR:80" ;;
+        esac
+        sed "s|^\([[:space:]]*\)listen 80 default_server;|\1listen $listen_spec default_server;|" \
+            "$REPO_DIR/nginx/fussballcal.conf" >"$vhost_tmp"
+        if ! grep -q "listen $listen_spec default_server;" "$vhost_tmp"; then
+            echo "FEHLER: listen-Zeile in nginx/fussballcal.conf nicht gefunden." >&2
+            rm -f "$vhost_tmp"
+            exit 1
+        fi
+        info "vhost lauscht nur auf $listen_spec"
+    else
+        cat "$REPO_DIR/nginx/fussballcal.conf" >"$vhost_tmp"
+    fi
+
+    # Ändert sich die listen-Adresse, genügt ein Reload NICHT: nginx öffnet
+    # beim Reload die neuen Lauschsockets, bevor es die alten schließt, und
+    # `bind() to 127.0.0.1:80 failed (98: Address already in use)` gegen den
+    # eigenen alten Socket auf 0.0.0.0:80 ist die Folge. Der Reload scheitert
+    # dann still — `nginx -t` und `systemctl reload` melden beide Erfolg, und
+    # der Dienst lauscht weiter auf allen Interfaces. Deshalb hier merken und
+    # unten neu starten statt neu laden.
+    listen_line() { grep -m1 -E '^[[:space:]]*listen ' "$1" 2>/dev/null || true; }
+    need_restart=0
+    if [ "$(listen_line "$NGINX_CONF")" != "$(listen_line "$vhost_tmp")" ]; then
+        need_restart=1
+    fi
+
+    if ! cmp -s "$vhost_tmp" "$NGINX_CONF"; then
+        install -m 644 "$vhost_tmp" "$NGINX_CONF"
         changed=1
         info "vhost aktualisiert: $NGINX_CONF"
     fi
+    rm -f "$vhost_tmp"
     if [ ! -e "$NGINX_LINK" ]; then
         ln -s "$NGINX_CONF" "$NGINX_LINK"
         changed=1
@@ -287,8 +403,25 @@ if [ "$with_nginx" -eq 1 ] && [ -d "$(dirname "$NGINX_CONF")" ]; then
     fi
     if [ "$changed" -eq 1 ]; then
         if nginx -t; then
-            systemctl reload nginx
-            info "nginx neu geladen"
+            # systemctl, wo systemd läuft; sonst (Container ohne systemd)
+            # direkt über nginx selbst.
+            if [ "$need_restart" -eq 1 ]; then
+                if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+                    systemctl restart nginx
+                else
+                    nginx -s quit 2>/dev/null || true
+                    sleep 1
+                    nginx
+                fi
+                info "nginx neu gestartet (listen-Adresse geändert)"
+            else
+                if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+                    systemctl reload nginx
+                else
+                    nginx -s reload
+                fi
+                info "nginx neu geladen"
+            fi
         else
             echo "FEHLER: 'nginx -t' schlägt fehl — kein Reload." >&2
             exit 1
@@ -320,6 +453,13 @@ Fertig. Nächste Schritte:
 Die Kalenderübersicht liegt offen unter  http://<host>/
 Eingetragen wird nur mit Anmeldung unter http://<host>/add_team.php
 Passwort ändern: $SPO_DIR/set_password.sh [--user NAME]
+$(if [ "$with_nginx" -eq 1 ] && [ -z "$TRUSTED_PROXY" ]; then cat <<'HINT'
+
+Hinweis: TRUSTED_PROXY ist nicht gesetzt — dieser vhost beantwortet Anfragen
+von jeder Gegenstelle, die ihn erreicht. Am öffentlichen Netz gehört das
+gesetzt (README: "Absicherung im öffentlichen Netz").
+HINT
+fi)
 
 Der Cron-Job wird separat eingerichtet (cron/crontab.example).
 EOF
