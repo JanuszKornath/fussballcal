@@ -335,6 +335,10 @@ kopieren. Unterstützt werden drei Link-Typen:
 Der `#!/...`-Teil am Ende darf drin bleiben. Andere fussball.de-Seiten
 (Startseite, Tabellen, Suchergebnisse) funktionieren nicht.
 
+Mannschaftslinks enthalten die Saison (`.../saison/2526/...`) — ein Eintrag
+gilt damit **nur für diese eine Saison**. Was zum Saisonwechsel zu tun ist,
+steht unter [Saisonwechsel](#5-saisonwechsel).
+
 ### 2. Den Link eintragen
 
 Es gibt zwei Wege — beide schreiben in dieselbe Datei
@@ -442,6 +446,34 @@ beides auf einmal.
 Ein Abo, das schon in einer Kalender-App eingerichtet ist, muss **dort**
 separat entfernt werden; nach dem Löschen auf dem Server liefert die URL nur
 noch einen 404.
+
+### 5. Saisonwechsel
+
+fussball.de vergibt pro Saison eigene Mannschaftslinks — die Saison steckt in
+der Adresse (`.../saison/2526/...`). Ein Kalender bildet deshalb immer nur die
+Spiele **einer** Saison ab; er hört zum Saisonende einfach auf, statt mit den
+neuen Spielen weiterzulaufen.
+
+Zum Saisonwechsel deshalb pro Mannschaft:
+
+1. Auf fussball.de den Link der **neuen** Saison heraussuchen (Schritt 1).
+2. Ihn unter einem eigenen Kurznamen eintragen, z.B. `tsv_musterstadt_1_2627`
+   (Schritt 2). Der alte Eintrag kann stehen bleiben — sein Kalender ist dann
+   das Archiv der vergangenen Saison — oder nach Schritt 4 gelöscht werden.
+3. Die neue Adresse an die Abonnenten weitergeben bzw. sie auf die Startseite
+   verweisen, wo der neue Kalender automatisch auftaucht.
+
+**Bestehende Abos wechseln nicht von selbst auf die neue Saison**: Wer den
+Kalender der alten Saison abonniert hat, muss den neuen Link zusätzlich
+abonnieren und das alte Abo in seiner Kalender-App entfernen. Beide
+Webseiten weisen darauf hin — die Startseite für die Abonnenten, das
+Formular für die, die Links eintragen.
+
+Wer stattdessen den Slug behalten will, kann in `teams.txt` auch nur die URL
+der bestehenden Zeile auf die neue Saison umschreiben. Dann bleibt die Abo-URL
+gleich und die Abonnenten müssen nichts tun — allerdings verschwindet damit
+auch der alte Spielplan aus dem Kalender, sobald der Cron-Job das nächste Mal
+läuft.
 
 ## Fehlersuche: keine Datums-/Zeitangaben im Kalender
 
