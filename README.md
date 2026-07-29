@@ -11,7 +11,8 @@ anderen externen Quellen nach — alles Nötige ist Teil dieses Repos
 
 > Kurz gesagt: Vereins-/Mannschaftslinks werden in `teams.txt` auf dem Server
 > eingetragen (oder per Webformular), abonnierbar ist das Ergebnis unter
-> `webcal://<host>/ics/<slug>.ics`. Details im Abschnitt
+> `webcal://<host>/ics/<slug>.ics`. Löschen geht denselben Weg — im Formular
+> per Knopf, auf dem Server per Editor. Details im Abschnitt
 > [Benutzung](#benutzung).
 
 ## Aufbau
@@ -31,7 +32,7 @@ fussballcal/
 │                           # Installation nach /srv/spielplanoffline/teams.txt kopiert
 ├── web/
 │   ├── index.php           # öffentliche Übersicht aller Kalenderlinks (ohne Login)
-│   ├── add_team.php        # Formular zum Hinzufügen neuer Teams (nur mit Login)
+│   ├── add_team.php        # Formular zum Hinzufügen und Löschen (nur mit Login)
 │   └── common.php          # gemeinsamer Unterbau beider Seiten
 ├── nginx/
 │   └── fussballcal.conf    # nginx vhost, inkl. text/calendar MIME-Type
@@ -101,7 +102,7 @@ deshalb gibt es genau eine Passwortabfrage statt fünfzehn (siehe
 | `/srv/spielplanoffline/teams.txt` | Team-Liste — **nur wenn sie noch nicht existiert**; für die Webserver-Gruppe beschreibbar (664), damit `add_team.php` Zeilen anhängen kann |
 | `/srv/spielplanoffline/spo.env` | die Pfade dieser Installation; `update_all.sh` und `selftest.sh` lesen sie |
 | `/srv/spielplanoffline/work/` | Arbeitsverzeichnis (tmp/Fonts/Output) |
-| `/var/www/fussballcal/{index.php,add_team.php,common.php,ics/}` | Übersichtsseite, Formular und Kalenderverzeichnis |
+| `/var/www/fussballcal/{index.php,add_team.php,common.php,ics/}` | Übersichtsseite, Formular und Kalenderverzeichnis; `ics/` ist für die Webserver-Gruppe beschreibbar (775), damit das Formular Kalender löschen kann |
 | `/var/www/fussballcal/config.php` | dieselben Pfade für die Webseiten (Pendant zu `spo.env`) |
 | `/etc/nginx/fussballcal.htpasswd` | Zugangsdaten fürs Formular — **nur wenn sie noch nicht existieren**; beim ersten Rollout wird ein Zufallspasswort erzeugt und einmalig ausgegeben |
 | `/etc/nginx/sites-{available,enabled}/fussballcal.conf` | vhost, danach `nginx -t` + Reload; Debians Default-Site wird dabei deaktiviert (sonst kommt die nginx-Welcome-Page statt fussballcal) |
@@ -119,13 +120,18 @@ Bildschirm und wird danach nur noch als Hash aufbewahrt. Verloren? Dann
 `sudo /srv/spielplanoffline/set_password.sh` (siehe
 [Zugang zum Formular](#zugang-zum-formular)).
 
-Beschreibbar für den Webserver ist ausschließlich `teams.txt` — das
-Verzeichnis darüber bleibt root. Dort liegen `update_all.sh` und der
-Vendor-Baum, die der Cron-Job als root ausführt; wären sie für den Webserver
-schreibbar, hätte ein Treffer in `add_team.php` direkt root zur Folge. Über
-`teams.txt` selbst lässt sich nichts einschleusen: `update_all.sh` akzeptiert
-nur Slugs aus `[a-z0-9_-]` und fussball.de-URLs und reicht die URL als
-Variable statt als Text in die Parameterdatei.
+Beschreibbar für den Webserver sind ausschließlich `teams.txt` und das
+Verzeichnis `ics/` (Löschen einer Datei braucht Schreibrecht auf das
+Verzeichnis, nicht auf die Datei). `/srv/spielplanoffline/` selbst bleibt
+root: dort liegen `update_all.sh` und der Vendor-Baum, die der Cron-Job als
+root ausführt; wären sie für den Webserver schreibbar, hätte ein Treffer in
+`add_team.php` direkt root zur Folge. Über `teams.txt` selbst lässt sich
+nichts einschleusen: `update_all.sh` akzeptiert nur Slugs aus `[a-z0-9_-]`
+und fussball.de-URLs und reicht die URL als Variable statt als Text in die
+Parameterdatei. Und weil `ics/` im Docroot liegt und für den Webserver
+beschreibbar ist, liefert der vhost alles unterhalb von `/ics/` per
+`location ^~ /ics/` ausnahmslos statisch aus — ohne das Präfix `^~` würde ein
+`.php` in diesem Verzeichnis an PHP-FPM gehen.
 
 Erst die Toolchain prüfen, dann einen manuellen Lauf anstoßen:
 
@@ -319,6 +325,37 @@ tail -n 40 /var/log/spielplanoffline.log
 Ungültige Zeilen (falscher Slug, Nicht-fussball.de-URL) werden dort mit
 Begründung protokolliert und übersprungen.
 
+### 4. Einen Kalender wieder löschen
+
+**a) Per Webformular**: `http://<host>/add_team.php` öffnen (mit Anmeldung,
+siehe [Zugang zum Formular](#zugang-zum-formular)), in der Liste *Vorhandene
+Kalender* neben dem Eintrag auf *Löschen* klicken und die Rückfrage
+bestätigen. Das entfernt in einem Schritt die Zeile aus
+`/srv/spielplanoffline/teams.txt` **und** die Datei
+`/var/www/fussballcal/ics/<slug>.ics`. Kommentare und die übrigen Einträge in
+`teams.txt` bleiben unangetastet.
+
+Auf der öffentlichen Startseite (`index.php`) gibt es die Knöpfe bewusst
+nicht: Sie bekommt die Liste ohne CSRF-Token und rendert damit keine
+Lösch-Formulare; verarbeitet wird ein Löschen ohnehin nur in `add_team.php`,
+also hinter der Anmeldung.
+
+**b) Direkt auf dem Server**:
+
+```bash
+sudo nano /srv/spielplanoffline/teams.txt          # Zeile löschen
+sudo rm /var/www/fussballcal/ics/<slug>.ics
+```
+
+Beide Schritte gehören zusammen: Wird nur die Zeile entfernt, bleibt die
+ICS-Datei liegen und nginx liefert sie unverändert weiter aus — der Kalender
+friert also ein, statt zu verschwinden. Genau deshalb macht das Formular
+beides auf einmal.
+
+Ein Abo, das schon in einer Kalender-App eingerichtet ist, muss **dort**
+separat entfernt werden; nach dem Löschen auf dem Server liefert die URL nur
+noch einen 404.
+
 ## Fehlersuche: keine Datums-/Zeitangaben im Kalender
 
 **Symptom** — im Log stehen alle Spiele mit Vereinsnamen, Spielort und
@@ -476,7 +513,10 @@ dann wieder unter `vendor/` eingecheckt wird (Patches nicht vergessen).
 - [x] `add_team.php` liegt hinter HTTP-Basic-Auth, die Kalenderübersicht
       (`index.php`) und die `ics`-Dateien bleiben offen zugänglich (siehe
       [Zugang zum Formular](#zugang-zum-formular)). Massen-Submits durch
-      Unbefugte sind damit erledigt; ein Captcha braucht es nicht mehr.
+      Unbefugte sind damit erledigt; ein Captcha braucht es nicht mehr. Das
+      Löschen liegt hinter derselben Anmeldung und zusätzlich hinter einem
+      CSRF-Token — Basic-Auth allein schützt nicht davor, dass eine fremde
+      Seite eine Anfrage im Namen des angemeldeten Benutzers auslöst.
 
 ## Rechtlicher Hinweis
 
