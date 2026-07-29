@@ -76,9 +76,11 @@ Internet nachgeladen. SpielplanOffline (V2.9) liegt fertig eingecheckt unter
 sudo apt update
 # imagemagick (convert) und perl sind zwingend nötig – ohne convert bricht
 # SpielplanOffline ab. wget braucht SpielplanOffline zur Laufzeit, um die
-# Spielpläne von fussball.de zu holen.
+# Spielpläne von fussball.de zu holen. fontconfig und fonts-dejavu-core
+# braucht nur der Selbsttest: er sucht per `fc-list` einen TrueType-Font, um
+# den OCR-Durchstich zu prüfen, und überspringt den Test sonst.
 sudo apt install -y wget gawk tesseract-ocr tesseract-ocr-deu imagemagick perl \
-    unzip cron nginx php-fpm
+    cron nginx php-fpm fontconfig fonts-dejavu-core
 
 # Repo klonen (oder Checkout aktualisieren), z.B. nach /srv/fussballcal
 git clone https://github.com/JanuszKornath/fussballcal.git
@@ -131,7 +133,9 @@ und fussball.de-URLs und reicht die URL als Variable statt als Text in die
 Parameterdatei. Und weil `ics/` im Docroot liegt und für den Webserver
 beschreibbar ist, liefert der vhost alles unterhalb von `/ics/` per
 `location ^~ /ics/` ausnahmslos statisch aus — ohne das Präfix `^~` würde ein
-`.php` in diesem Verzeichnis an PHP-FPM gehen.
+`.php` in diesem Verzeichnis an PHP-FPM gehen. `config.php` und `common.php`
+sperrt der vhost zusätzlich per `deny all`: beide werden von den Seiten
+eingebunden, haben als eigene Adresse aber nichts im Netz zu suchen.
 
 Erst die Toolchain prüfen, dann einen manuellen Lauf anstoßen:
 
@@ -142,8 +146,17 @@ tail -n 40 /var/log/spielplanoffline.log
 ls -l /var/www/fussballcal/ics/
 ```
 
-Pfade lassen sich per Umgebungsvariablen überschreiben (`SPO_TOOL_DIR`,
-`SPO_CONFIG`, `SPO_OUTDIR`, `SPO_HOME`, `SPO_START`, `SPO_END`, `SPO_LOG`).
+Beide Skripte lesen die Pfade dieser Installation aus `spo.env` (von
+`deploy.sh` erzeugt); gesetzte Umgebungsvariablen haben Vorrang:
+`SPO_TOOL_DIR`, `SPO_CONFIG`, `SPO_OUTDIR`, `SPO_HOME`, `SPO_LOG`, dazu
+`SPO_ENV` für die Datei selbst und `SPO_LOCK` für die Lockdatei.
+`SPO_START` und `SPO_END` verschieben das Zeitfenster, in dem Spiele in den
+Kalender wandern — ohne Angabe reicht es von zwei Monaten in der Vergangenheit
+bis zwölf Monate in die Zukunft.
+
+Zwei Läufe gleichzeitig gibt es nicht: `update_all.sh` hält ein `flock` auf
+`SPO_LOCK` und bricht mit *„Update läuft bereits"* ab, wenn ein Lauf länger
+dauert als der Cron-Takt.
 
 ### Änderungen aus dem Repo nachziehen
 
@@ -171,7 +184,7 @@ Der Dienst hat zwei Seiten, und nur eine davon ist geschützt:
 |---|---|---|
 | `http://<host>/` (`index.php`) | **offen** | Liste aller Kalender mit Abo-Link und Stand der letzten Aktualisierung |
 | `http://<host>/ics/<slug>.ics` | **offen** | die Kalender selbst — Abos funktionieren nur ohne Login |
-| `http://<host>/add_team.php` | **Login** | Formular zum Eintragen neuer Mannschaften |
+| `http://<host>/add_team.php` | **Login** | Formular zum Eintragen — dazu dieselbe Liste, aber mit *Löschen*-Knöpfen |
 
 Die Anmeldung ist HTTP-Basic-Auth: nginx prüft sie in der `location =
 /add_team.php` gegen `/etc/nginx/fussballcal.htpasswd` (siehe
@@ -258,8 +271,10 @@ Es gibt zwei Wege — beide schreiben in dieselbe Datei
 **a) Per Webformular** (der bequeme Weg): `http://<host>/add_team.php` im
 Browser öffnen — der Browser fragt nach Benutzer und Passwort (siehe
 [Zugang zum Formular](#zugang-zum-formular)) —, Link und Kurznamen eintragen,
-absenden. Das Formular akzeptiert nur `https://www.fussball.de/`-Links. Von der
-öffentlichen Startseite führt unten ein Link dorthin.
+absenden. Das Formular akzeptiert nur `https://www.fussball.de/`-Links und
+höchstens 200 Einträge in `teams.txt` (Obergrenze gegen Missbrauch, danach
+meldet es *„Maximale Anzahl an Teams erreicht"*). Von der öffentlichen
+Startseite führt unten ein Link dorthin.
 
 **b) Direkt in der Datei** (z.B. für viele Teams auf einmal):
 
@@ -502,12 +517,6 @@ Passwortabfrage bleiben.
       26.07.2026 erfolgreich, 39 Termine mit Datum und Uhrzeit. Gegen die
       Mannschaftsseite geprüft — Datum, Anstoßzeit und Paarung stimmen überein,
       inklusive der Freitags- und Samstagsspiele mit abweichenden Anstoßzeiten.
-
-Fussball.de ändert Layout und Font-Obfuskation regelmäßig. Wenn die
-Datumsangaben irgendwann wieder fehlen, führt der Abschnitt
-[Fehlersuche](#fehlersuche-keine-datumszeitangaben-im-kalender) durch die
-Eingrenzung; im Zweifel ist eine neuere SpielplanOffline-Version nötig, die
-dann wieder unter `vendor/` eingecheckt wird (Patches nicht vergessen).
 - [ ] Rechtliche Prüfung bei öffentlicher Bereitstellung mehrerer fremder Vereine
       (siehe Hinweis unten).
 - [x] `add_team.php` liegt hinter HTTP-Basic-Auth, die Kalenderübersicht
@@ -517,6 +526,12 @@ dann wieder unter `vendor/` eingecheckt wird (Patches nicht vergessen).
       Löschen liegt hinter derselben Anmeldung und zusätzlich hinter einem
       CSRF-Token — Basic-Auth allein schützt nicht davor, dass eine fremde
       Seite eine Anfrage im Namen des angemeldeten Benutzers auslöst.
+
+Fussball.de ändert Layout und Font-Obfuskation regelmäßig. Wenn die
+Datumsangaben irgendwann wieder fehlen, führt der Abschnitt
+[Fehlersuche](#fehlersuche-keine-datumszeitangaben-im-kalender) durch die
+Eingrenzung; im Zweifel ist eine neuere SpielplanOffline-Version nötig, die
+dann wieder unter `vendor/` eingecheckt wird (Patches nicht vergessen).
 
 ## Rechtlicher Hinweis
 
