@@ -193,36 +193,33 @@ sudo /srv/spielplanoffline/selftest.sh
 Die eingetragenen Kalender in `/srv/spielplanoffline/teams.txt` bleiben dabei
 unangetastet.
 
-### TLS: hinter einem Reverse Proxy oder direkt am Netz
+### TLS: ein Reverse Proxy gehört davor
 
-Der vhost aus diesem Repo lauscht auf **Port 80 ohne TLS**. Das ist Absicht —
-beide üblichen Aufbauten bleiben damit möglich:
+Der vhost aus diesem Repo lauscht auf **Port 80, ohne TLS** — und dabei bleibt
+es: Zertifikate, Domain-Routing und HTTPS sind nicht Teil dieses Projekts.
+Daraus folgen zwei Betriebsarten, und nur zwei:
 
-**a) Hinter einem Reverse Proxy.** Ein vorgelagerter Proxy (nginx, Traefik,
-Caddy, HAProxy, ein Fertig-Setup auf dem Router …) terminiert TLS, kümmert sich
-um die Zertifikate und leitet auf Port 80 dieses Rechners weiter; fussballcal
-ist dann nur internes Backend. Für genau diesen Fall sind `LISTEN_ADDR` und
-`TRUSTED_PROXY` gedacht (siehe
-[Absicherung im öffentlichen Netz](#absicherung-im-öffentlichen-netz)).
+**Im eigenen Netz** (Heimnetz, Vereins-LAN, VPN) reicht der Dienst, wie er ist.
+Abonniert wird über `http://` bzw. `webcal://` auf die lokale Adresse, ein
+Proxy ist nicht nötig.
 
-**b) Direkt am Netz.** Dann gehört TLS auf diesen Rechner, üblicherweise per
-Let's Encrypt:
-
-```bash
-sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d kalender.example.org
-```
-
-certbot schreibt `listen 443 ssl`, die Zertifikatspfade und eine Weiterleitung
-von Port 80 in den installierten vhost. **Achtung:** `deploy.sh` schreibt
-`/etc/nginx/sites-available/fussballcal.conf` bei jedem Rollout aus dem Repo
-neu — die certbot-Zeilen wären danach weg. Ab dann also entweder mit
-`--no-nginx` ausrollen und den vhost von Hand pflegen, oder die
-TLS-Konfiguration in der eigenen Kopie von `nginx/fussballcal.conf` mitführen.
+**Aus dem Internet erreichbar** nur **hinter einem Reverse Proxy**, der TLS
+terminiert (nginx, Traefik, Caddy, HAProxy, ein Fertig-Setup auf dem Router …)
+und auf Port 80 dieses Rechners weiterleitet. fussballcal ist dann internes
+Backend. Genau für diesen Aufbau sind `LISTEN_ADDR` und `TRUSTED_PROXY` da
+(siehe [Absicherung im öffentlichen Netz](#absicherung-im-öffentlichen-netz)).
 
 Ohne TLS davor gehört der Dienst nicht ins offene Internet: Die Zugangsdaten
 des Eintrage-Formulars gingen bei Basic Auth sonst praktisch im Klartext (nur
 base64-kodiert) über die Leitung.
+
+> TLS direkt in diesen vhost zu legen — etwa per `certbot --nginx` — ist nicht
+> vorgesehen und wird hier auch nicht beschrieben: `deploy.sh` schreibt
+> `/etc/nginx/sites-available/fussballcal.conf` bei **jedem** Rollout aus dem
+> Repo neu, jede von Hand oder von certbot ergänzte TLS-Konfiguration wäre
+> beim nächsten `git pull && sudo scripts/deploy.sh` wieder weg. Wer das
+> trotzdem will, pflegt den vhost ab dann selbst und rollt nur noch mit
+> `--no-nginx` aus.
 
 ### Zugang zum Formular
 
@@ -268,17 +265,16 @@ pro Sekunde mit kurzen Spitzen bis fünf, danach antwortet nginx mit `429`. Die
 Zwei Dinge, die diese Anmeldung *nicht* leistet: Die Zugangsdaten gehen bei
 Basic Auth nur base64-kodiert über die Leitung — das ist in Ordnung, solange
 irgendwo davor TLS terminiert wird (siehe
-[TLS](#tls-hinter-einem-reverse-proxy-oder-direkt-am-netz)); ohne TLS gehört
+[TLS](#tls-ein-reverse-proxy-gehört-davor)); ohne TLS gehört
 der Dienst nicht ins Internet. Und die fertigen Kalender bleiben absichtlich
 öffentlich: wer die `ics`-Adresse kennt, kann sie abonnieren. Geschützt ist nur
 das *Eintragen* und *Löschen*.
 
 ### Absicherung im öffentlichen Netz
 
-Sobald der Dienst aus dem Internet erreichbar ist, sind zwei Fragen zu klären:
-**worauf lauscht nginx** und **wer darf fragen**. Für beides gibt es eine
-Variable beim Rollout (beide zielen auf den Aufbau mit Reverse Proxy, Variante
-a oben):
+Sobald der Dienst aus dem Internet erreichbar ist — also hinter einem Reverse
+Proxy, siehe oben —, sind zwei Fragen zu klären: **worauf lauscht nginx** und
+**wer darf fragen**. Für beides gibt es eine Variable beim Rollout:
 
 ```bash
 sudo LISTEN_ADDR=10.0.0.42 TRUSTED_PROXY=10.0.0.0/24 scripts/deploy.sh
