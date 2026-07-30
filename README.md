@@ -381,8 +381,8 @@ kopieren. Unterstützt werden drei Link-Typen:
 Der `#!/...`-Teil am Ende darf drin bleiben. Andere fussball.de-Seiten
 (Startseite, Tabellen, Suchergebnisse) funktionieren nicht.
 
-Mannschafts- und Staffellinks sind **saisongebunden**: die `team-id` bzw. die
-`staffel`-ID vergibt fussball.de pro Saison neu, bei Mannschaftslinks steht die
+Mannschafts- und Staffellinks sind **saisongebunden**: fussball.de vergibt die
+`team-id` bzw. die `staffel`-ID pro Saison neu, bei Mannschaftslinks steht die
 Saison zusätzlich in der Adresse (`.../saison/2526/...`). Ein solcher Eintrag
 gilt damit nur für diese eine Saison. Ein **Vereinslink** dagegen ist es nicht —
 er enthält weder Saison noch team-id, und sein Kalender wandert von selbst in
@@ -500,11 +500,23 @@ noch einen 404.
 ### 5. Saisonwechsel
 
 fussball.de vergibt pro Saison eigene Mannschafts- und Staffellinks — die Saison
-steckt in der Adresse (`.../saison/2526/...`), und die `team-id` gilt ohnehin nur
-für eine Spielzeit. Ein solcher Kalender bildet deshalb immer nur die Spiele
-**einer** Saison ab; er hört zum Saisonende einfach auf, statt mit den neuen
-Spielen weiterzulaufen. Vereinslinks (`.../verein/.../id/<ID>`) sind davon
-ausgenommen: sie enthalten keine Saison, ihr Kalender läuft von selbst weiter.
+steckt in der Adresse (`.../saison/2526/...`), und die `team-id` gilt nur für
+eine Spielzeit. Ein solcher Kalender bildet deshalb immer nur die Spiele **einer**
+Saison ab; er hört zum Saisonende einfach auf, statt mit den neuen Spielen
+weiterzulaufen. Vereinslinks (`.../verein/.../id/<ID>`) sind davon ausgenommen:
+sie enthalten keine Saison, ihr Kalender läuft von selbst weiter.
+
+> **Was die Saison eingrenzt, ist das Datumsfenster — nicht die `team-id`.** Das
+> ist im Betrieb nachgemessen: ein Kalender der Saison 26/27 lieferte auch die
+> letzten, bereits gespielten Partien vom Juni 2026 mit, also die Reste der
+> Vorsaison. Die abgefragte Druckansicht filtert erkennbar allein nach
+> `datum-von`/`datum-bis`, die `team-id` entscheidet nur, um *welche* Mannschaft
+> es geht. Deshalb überlappen die Fenster benachbarter Saisons um den Vor- und
+> Nachlauf: am Anfang stehen ein paar Spiele der alten, am Ende ein paar der
+> neuen Saison im Kalender. Das ist bekannt und in Kauf genommen — es sind
+> gespielte Partien in der Vergangenheit. Wer es exakt haben will, setzt
+> `SPO_SAISON_VORLAUF=0` und `SPO_SAISON_NACHLAUF=0`; dann ist das Fenster genau
+> das Spieljahr vom 1.7. bis zum 30.6.
 
 Zum Saisonwechsel deshalb pro Mannschaft:
 
@@ -582,8 +594,10 @@ Tag ab, damit jeder Wert auf einem Monatsende landet — `2 months` ergibt den
 31.08., `6 months` den 31.12.
 
 Größer sollte das Fenster nicht sein: es reichte sonst tief in die Folgesaison,
-deren Pokalrunden schon in der zweiten Julihälfte beginnen, und überlappte damit
-Spiele, die gar nicht mehr zu dieser Saison gehören.
+deren Pokalrunden schon in der zweiten Julihälfte beginnen, und sammelte damit
+Spiele ein, die gar nicht mehr zu dieser Saison gehören. Das ist keine Theorie —
+die Abfrage filtert allein nach Datum, siehe den Kasten unter
+[Saisonwechsel](#5-saisonwechsel).
 
 Klebt das letzte gefundene Spiel am Rand des Fensters (näher als
 `SPO_SAISON_RANDABSTAND`, Vorgabe 14 Tage), schreibt das Tool eine Warnung ins
