@@ -107,7 +107,7 @@ else
     if saison_aus_url "$URL2526"; then
         pruef "Saison aus der URL gelesen" "2526" "$SAISON"
         pruef "Fenster beginnt vor der Spielzeit" "2025-06-01" "$FENSTER_START"
-        pruef "Fenster endet nach der Spielzeit" "2026-12-30" "$FENSTER_ENDE"
+        pruef "Fenster endet nach der Spielzeit" "2026-07-31" "$FENSTER_ENDE"
     else
         bad "saison_aus_url erkennt '.../saison/2526/...' nicht"
     fi

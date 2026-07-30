@@ -570,25 +570,40 @@ nähme den Abonnenten auch noch das Archiv.
 
 Abgefragt wird pro Zeile das Saisonfenster aus der URL. Die Spielordnungen
 definieren das Spieljahr einheitlich als **1. Juli bis 30. Juni** — von der
-Bundesliga bis in die Kreisliga. Darauf allein kann man sich aber nicht
-verlassen: dieselbe Regel erlaubt den Sportinstanzen ausdrücklich, über den
-30. Juni hinaus anzusetzen, und das kommt vor. Der BFV hat die Saison 2019/20 von
-der Bayernliga abwärts bis zum **30. Juni 2021** verlängert; die Saison 2020/21
-fiel dafür aus. Auch die Nahtstellen sind bespielt — die Pokalrunden der neuen
-Saison liegen oft schon in der zweiten Julihälfte.
+Bundesliga bis in die Kreisliga. Im Normalbetrieb wird das auch eingehalten:
+Relegation, Entscheidungs- und Pokalendspiele liegen im Mai und Juni, und selbst
+der Nachholstau eines harten Winters wird bis zum Saisonende abgearbeitet.
 
-Das Fenster reicht deshalb absichtlich über die nominelle Spielzeit hinaus:
+Das Fenster bekommt deshalb nur einen Monat Luft an jeder Seite:
 `SPO_SAISON_VORLAUF` (Vorgabe 1 Monat) davor, `SPO_SAISON_NACHLAUF` (Vorgabe
-6 Monate) danach. Für die Saison 25/26 wird also `2025-06-01 .. 2026-12-30`
-abgefragt. Zu weit kostet nichts — es ist derselbe eine Abruf, außerhalb der
-Saison liefert fussball.de einfach keine Zeilen. Zu eng würde stillschweigend
-abschneiden.
+1 Monat) danach. Für die Saison 25/26 wird also `2025-06-01 .. 2026-07-31`
+abgefragt. Der Nachlauf rechnet auf den 1. Juli der Folgesaison und zieht einen
+Tag ab, damit jeder Wert auf einem Monatsende landet — `2 months` ergibt den
+31.08., `6 months` den 31.12.
 
-Klebt das letzte gefundene Spiel trotzdem am Rand des Fensters (näher als
+Größer sollte das Fenster nicht sein: es reichte sonst tief in die Folgesaison,
+deren Pokalrunden schon in der zweiten Julihälfte beginnen, und überlappte damit
+Spiele, die gar nicht mehr zu dieser Saison gehören.
+
+Klebt das letzte gefundene Spiel am Rand des Fensters (näher als
 `SPO_SAISON_RANDABSTAND`, Vorgabe 14 Tage), schreibt das Tool eine Warnung ins
-Log — dann ist `SPO_SAISON_NACHLAUF` zu erhöhen. Wer eine gestreckte Spielzeit
-von Hand abdecken will, setzt `SPO_START`/`SPO_END`; die gelten dann für alle
-Zeilen und schalten die Saisonlogik ab.
+Log — dann ist `SPO_SAISON_NACHLAUF` zu erhöhen.
+
+**Die eine bekannte Ausnahme ist die Pandemie.** Der BFV hat die Saison 2019/20
+von der Bayernliga abwärts bis zum **30. Juni 2021** gestreckt, weil der
+Spielbetrieb erst ab September 2020 wieder möglich war und in den meisten Ligen
+noch 10 bis 17 Spieltage ausstanden; die Saison 2020/21 fiel dafür aus. So etwas
+ist aus den Daten **nicht** erkennbar: nach der Unterbrechung klafft eine Lücke,
+das letzte sichtbare Spiel liegt weit vor dem Fensterende, und die Randwarnung
+oben schlägt deshalb nicht an. Tritt der Fall wieder ein, deckt ihn eine
+Variable ab — für den BFV-Zeitraum exakt:
+
+```bash
+SPO_SAISON_NACHLAUF="12 months"   # Saison 19/20 -> Fenster bis 2021-06-30
+```
+
+Wer stattdessen ein festes Fenster für alle Zeilen will, setzt
+`SPO_START`/`SPO_END`; die schalten die Saisonlogik ganz ab.
 
 Zeilen ohne erkennbare Saison in der URL (Vereinslinks) behalten das alte
 rollierende Fenster (−2 Monate bis +12 Monate) und bekommen keinen Saisonstatus.

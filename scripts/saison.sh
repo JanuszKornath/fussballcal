@@ -22,14 +22,29 @@
 # hinausreicht.
 #
 # Die Spielordnungen definieren das Spieljahr einheitlich als 1. Juli bis
-# 30. Juni, erlauben den Sportinstanzen aber ausdrücklich, darüber hinaus
-# anzusetzen — und das kommt vor: der BFV hat die Saison 2019/20 von der
-# Bayernliga abwärts bis zum 30.6.2021 verlängert. Ein zu enges Fenster
-# schneidet solche Spiele stillschweigend ab; ein zu weites kostet nichts, es
-# ist derselbe eine Abruf mit max/999, und außerhalb der Saison liefert
-# fussball.de einfach keine Zeilen. Also großzügig.
+# 30. Juni und erlauben den Sportinstanzen, darüber hinaus anzusetzen. Im
+# Normalbetrieb passiert das aber nicht: Relegation, Entscheidungs- und
+# Pokalendspiele liegen im Mai und Juni, und selbst der Nachholstau eines
+# harten Winters wird bis zum Saisonende abgearbeitet. Ein Monat Luft reicht
+# also — das entspricht auch der Vorgabe, die der Autor von SpielplanOffline
+# selbst gewählt hatte (1.8. bis 31.7., runscript.awk:194).
+#
+# Der eine bekannte Gegenfall ist die Pandemie: der BFV hat die Saison 2019/20
+# von der Bayernliga abwärts bis zum 30.6.2021 gestreckt, weil der Spielbetrieb
+# erst ab September 2020 wieder möglich war. Das ist aus den Daten nicht
+# erkennbar — nach der Unterbrechung klafft eine Lücke, das letzte sichtbare
+# Spiel liegt weit vor dem Fensterende, und fenster_zu_eng() schlägt deshalb
+# nicht an. Dafür gibt es SPO_SAISON_NACHLAUF: eine Variable, kein Patch.
+#
+# Gegen einen sehr weiten Nachlauf spricht die Überlappung — das Fenster reicht
+# sonst tief in die Folgesaison, deren Pokalrunden schon in der zweiten
+# Julihälfte beginnen.
+#
+# Der Nachlauf wird auf den nominellen Saisonbeginn der Folgesaison (1.7.)
+# gerechnet und dann ein Tag abgezogen, damit jeder Wert auf einem Monatsende
+# landet: 1 month -> 31.07., 2 months -> 31.08., 6 months -> 31.12.
 SAISON_VORLAUF="${SPO_SAISON_VORLAUF:-1 month}"
-SAISON_NACHLAUF="${SPO_SAISON_NACHLAUF:-6 months}"
+SAISON_NACHLAUF="${SPO_SAISON_NACHLAUF:-1 month}"
 
 # Ab wann "kein Spiel mehr in der Zukunft" als Saisonende gilt — gemeint ist
 # der Abstand nach dem *letzten* Spiel, nicht eine Lücke im Ansetzungsplan.
@@ -70,7 +85,7 @@ saison_aus_url() {
     # NICHT als Filtergrenze.
     SAISON_NOMINALENDE="20$yy2-06-30"
     FENSTER_START="$(date -d "20$yy1-07-01 -$SAISON_VORLAUF" +%F)"
-    FENSTER_ENDE="$(date -d "$SAISON_NOMINALENDE +$SAISON_NACHLAUF" +%F)"
+    FENSTER_ENDE="$(date -d "20$yy2-07-01 +$SAISON_NACHLAUF -1 day" +%F)"
     return 0
 }
 
