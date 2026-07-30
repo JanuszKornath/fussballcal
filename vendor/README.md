@@ -65,9 +65,9 @@ Sonst gilt eine Datei aus einem früheren Lauf fälschlich als Erfolg.
 ### 3. `iconv.perl` — UTF-8-Ausgabe
 
 Der Ausgabe-Dateihandle hatte keine `:utf8`-Schicht. Perl schrieb die
-dekodierten Strings deshalb als Latin-1, aus `Göttingen` wurde in der `.ics`
-`G\366ttingen`. RFC 5545 schreibt UTF-8 vor; Kalender-Apps zeigen sonst kaputte
-Umlaute. Der Patch öffnet die Ausgabedatei mit `>:utf8`.
+dekodierten Strings deshalb als Latin-1, aus `Mönchengladbach` wurde in der
+`.ics` `M\366nchengladbach`. RFC 5545 schreibt UTF-8 vor; Kalender-Apps zeigen
+sonst kaputte Umlaute. Der Patch öffnet die Ausgabedatei mit `>:utf8`.
 
 ## Auf eine neuere Version aktualisieren
 
