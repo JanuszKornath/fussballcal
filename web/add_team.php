@@ -125,13 +125,20 @@ $teams = readTeams();
        Verein suchen, deren Seite öffnen und die Adresse aus der Adresszeile des
        Browsers kopieren (<code>.../mannschaft/…</code> oder
        <code>.../verein/…</code>).</p>
-    <p class="hint">Ein Link gilt nur für eine Saison — fussball.de führt die
-       Saison in der Adresse mit (<code>.../saison/2526/...</code>). Zur neuen
-       Saison also den neuen Link eintragen, am besten unter einem eigenen
-       Kurznamen (z.B. <code>tsv-musterstadt-1-2627</code>). Der alte Kalender
-       bleibt dann als Archiv der vergangenen Saison stehen, und die
-       Abonnenten müssen die neue Adresse abonnieren: ein bestehendes Abo
-       wechselt nicht von selbst auf die neue Saison.</p>
+    <p class="hint">Ein <em>Mannschafts</em>link gilt nur für eine Saison —
+       fussball.de führt die Saison in der Adresse mit
+       (<code>.../saison/2526/...</code>). Zur neuen Saison also den neuen Link
+       eintragen, am besten unter einem eigenen Kurznamen (z.B.
+       <code>tsv-musterstadt-1-2627</code>). Der alte Kalender bleibt dann als
+       Archiv der vergangenen Saison stehen, und die Abonnenten müssen die neue
+       Adresse abonnieren: ein bestehendes Abo wechselt nicht von selbst auf die
+       neue Saison. Ein <em>Vereins</em>link ist nicht saisongebunden und läuft
+       von selbst weiter.</p>
+    <p class="hint">Sobald für eine Mannschaft kein Spiel mehr ansteht, wird der
+       Kalender in der Übersicht als <em>vermutlich beendet</em> markiert und
+       enthält einen entsprechenden Termin. Mit Gewissheit lässt sich das
+       Saisonende nicht bestimmen — fussball.de nennt keines, und Nachhol- oder
+       Pokalspiele können noch folgen. Der Kalender läuft dann einfach weiter.</p>
 
     <form method="post">
         <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrf) ?>">

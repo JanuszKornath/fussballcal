@@ -1,6 +1,7 @@
 #!/bin/bash
 #
-# selftest.sh — prüft die OCR-Toolchain, von der SpielplanOffline abhängt.
+# selftest.sh — prüft die OCR-Toolchain, von der SpielplanOffline abhängt,
+# und die Saisonlogik aus saison.sh.
 #
 # Fussball.de verschleiert Datum und Uhrzeit über einen eigenen Webfont: die
 # Ziffern stehen als Codepoints aus dem Unicode-Private-Use-Bereich im HTML,
@@ -31,7 +32,7 @@ ok()   { printf '  \033[32mOK\033[0m    %s\n' "$*"; }
 warn() { printf '  \033[33mHINWEIS\033[0m %s\n' "$*"; }
 bad()  { printf '  \033[31mFEHLER\033[0m %s\n' "$*"; fehler=1; }
 
-echo "SpielplanOffline — Selbsttest der OCR-Toolchain"
+echo "fussballcal — Selbsttest (OCR-Toolchain und Saisonlogik)"
 echo "------------------------------------------------------------------"
 
 # ------------------------------------------------------------------
@@ -66,10 +67,101 @@ else
     bad "tesseract fehlt — 'sudo apt install tesseract-ocr tesseract-ocr-deu'"
 fi
 
-[ -n "$CONVERT" ] || { echo; echo "Ohne ImageMagick sind keine weiteren Tests möglich."; exit 1; }
-
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
+
+# ------------------------------------------------------------------
+# 2. Saisonlogik
+# ------------------------------------------------------------------
+# Braucht kein fussball.de und keine OCR: geprüft wird gegen synthetische
+# ICS-Dateien, wie sie SpielplanOffline erzeugt. Der Punkt ist die
+# Unterscheidung, die es vorher nicht gab — "leer, weil die Saison zu Ende ist"
+# gegen "leer, weil die Toolchain kaputt ist".
+echo
+echo "[2] Saisonlogik (scripts/saison.sh)"
+SAISON_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/saison.sh"
+if [ ! -r "$SAISON_LIB" ]; then
+    bad "saison.sh nicht gefunden neben $0 — update_all.sh bricht damit ab."
+else
+    . "$SAISON_LIB"
+
+    pruef() { # pruef <beschreibung> <erwartet> <ist>
+        if [ "$2" = "$3" ]; then ok "$1"
+        else bad "$1 (erwartet '$2', ist '$3')"; fi
+    }
+
+    # Bausteine für eine ICS wie aus fussball2csv.awk. Der Zeitzonenblock im
+    # Kopf enthält selbst eine DTSTART-Zeile — die darf nicht als Spiel zählen.
+    mach_ics() {
+        local f="$1" d; shift
+        printf 'BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VTIMEZONE\nTZID:Europe/Berlin\nDTSTART:19810329T020000\nEND:VTIMEZONE\n' >"$f"
+        for d in "$@"; do
+            printf '\nBEGIN:VEVENT\nUID:ID%s@SpielplanOffline\nDTSTART;TZID=Europe/Berlin:%sT153000\nDTEND;TZID=Europe/Berlin:%sT172000\nSUMMARY:A - B\nEND:VEVENT\n' "$d" "$d" "$d" >>"$f"
+        done
+        printf '\nEND:VCALENDAR\n' >>"$f"
+    }
+
+    URL2526='https://www.fussball.de/mannschaft/x/-/saison/2526/team-id/011MI#!/'
+
+    # -- Fenster aus der URL
+    if saison_aus_url "$URL2526"; then
+        pruef "Saison aus der URL gelesen" "2526" "$SAISON"
+        pruef "Fenster beginnt vor der Spielzeit" "2025-06-01" "$FENSTER_START"
+        pruef "Fenster endet nach der Spielzeit" "2026-07-31" "$FENSTER_ENDE"
+    else
+        bad "saison_aus_url erkennt '.../saison/2526/...' nicht"
+    fi
+    if saison_aus_url 'https://www.fussball.de/verein/sv-beispiel/-/id/00ES1234'; then
+        bad "Vereinslink liefert eine Saison, obwohl er nicht saisongebunden ist"
+    else
+        ok "Vereinslink liefert keine Saison (bleibt beim rollierenden Fenster)"
+    fi
+
+    # -- Statusermittlung
+    status_fuer() { # status_fuer <heute> <spieldatum...>
+        local heute="$1"; shift
+        saison_aus_url "$URL2526" >/dev/null
+        mach_ics "$TMP/saison.ics" "$@"
+        ics_kennzahlen "$TMP/saison.ics" "$heute"
+        saison_status "$heute"
+        echo "$STATUS"
+    }
+    pruef "Spiel steht noch an"            "LAUFEND"                    "$(status_fuer 20260301 20260210 20260405)"
+    pruef "Winterpause ist kein Saisonende" "LAUFEND"                   "$(status_fuer 20260105 20251220 20260210)"
+    pruef "letztes Spiel innerhalb der Karenz" "LAUFEND"                "$(status_fuer 20260615 20260601)"
+    pruef "letztes Spiel lange her"        "SAISONENDE_VERMUTLICH"      "$(status_fuer 20260711 20260601)"
+    pruef "Saisonfenster abgelaufen"       "KEINE_SPIELE_MEHR_ERWARTET" "$(status_fuer 20270105 20260601)"
+    pruef "leer am Saisonanfang"           "VORSAISON"                  "$(status_fuer 20250715)"
+    pruef "leer mitten in der Saison"      "LEER_UNERWARTET"            "$(status_fuer 20260301)"
+
+    # -- Hinweis-Termin
+    saison_aus_url "$URL2526" >/dev/null
+    mach_ics "$TMP/hinweis.ics" 20260510 20260601
+    ics_kennzahlen "$TMP/hinweis.ics" 20260711
+    ergaenze_saisonhinweis "$TMP/hinweis.ics" "tsv_test"
+    pruef "Hinweis-Termin angehängt" "3" "$(grep -c '^BEGIN:VEVENT' "$TMP/hinweis.ics")"
+    pruef "Kalender bleibt genau einmal geschlossen" "1" "$(grep -c '^END:VCALENDAR$' "$TMP/hinweis.ics")"
+    pruef "END:VCALENDAR steht am Ende" "END:VCALENDAR" "$(tail -1 "$TMP/hinweis.ics")"
+    pruef "Hinweis liegt nach dem letzten Spiel" "DTSTART;VALUE=DATE:20260602" \
+          "$(grep '^DTSTART;VALUE=DATE:' "$TMP/hinweis.ics")"
+    pruef "UID ist stabil (kein Duplikat in der App)" "UID:saisonende-tsv_test-2526@fussballcal" \
+          "$(grep '^UID:saisonende' "$TMP/hinweis.ics")"
+    if command -v iconv >/dev/null 2>&1; then
+        if iconv -f UTF-8 -t UTF-8 "$TMP/hinweis.ics" >/dev/null 2>&1; then
+            ok "Ausgabe ist gültiges UTF-8"
+        else
+            bad "Hinweis-Termin macht die Datei zu ungültigem UTF-8"
+        fi
+    fi
+
+    unset -f pruef mach_ics status_fuer
+fi
+
+# Die folgenden Abschnitte brauchen ImageMagick. Die Saisonlogik oben lief
+# schon durch, deshalb hier mit dem bisherigen Ergebnis aussteigen statt hart
+# mit 1 — sonst verdeckte ein fehlendes ImageMagick, ob sie in Ordnung war.
+[ -n "$CONVERT" ] || { echo; echo "Ohne ImageMagick sind keine weiteren Tests möglich."; exit "$fehler"; }
+
 PROBE="30.08.2026"
 printf '%s\n%s\n%s\n' "$PROBE" "$PROBE" "$PROBE" > "$TMP/text.txt"
 
@@ -79,10 +171,10 @@ FONT=$(fc-list -f '%{file}\n' 2>/dev/null | grep -i '\.ttf$' | sort | head -1)
 [ -n "$FONT" ] || FONT=$(find /usr/share/fonts -name '*.ttf' 2>/dev/null | sort | head -1)
 
 # ------------------------------------------------------------------
-# 2. ImageMagick-Sicherheitsrichtlinie
+# 3. ImageMagick-Sicherheitsrichtlinie
 # ------------------------------------------------------------------
 echo
-echo "[2] ImageMagick-Sicherheitsrichtlinie (policy.xml)"
+echo "[3] ImageMagick-Sicherheitsrichtlinie (policy.xml)"
 if [ -z "$FONT" ]; then
     warn "kein TrueType-Font zum Testen gefunden — 'sudo apt install fonts-dejavu-core'"
 else
@@ -108,10 +200,10 @@ else
 fi
 
 # ------------------------------------------------------------------
-# 3. OCR-Durchstich
+# 4. OCR-Durchstich
 # ------------------------------------------------------------------
 echo
-echo "[3] OCR-Durchstich (Text -> Bild -> Text)"
+echo "[4] OCR-Durchstich (Text -> Bild -> Text)"
 if [ -s "$TMP/direkt.png" ] && command -v tesseract >/dev/null 2>&1; then
     tesseract "$TMP/direkt.png" "$TMP/ocr" -l deu --psm 6 >/dev/null 2>&1
     if [ -s "$TMP/ocr.txt" ] && grep -q "$PROBE" "$TMP/ocr.txt"; then
@@ -124,10 +216,10 @@ else
 fi
 
 # ------------------------------------------------------------------
-# 4. Lokale Patches im vendorten Tool
+# 5. Lokale Patches im vendorten Tool
 # ------------------------------------------------------------------
 echo
-echo "[4] Lokale Patches in SpielplanOffline"
+echo "[5] Lokale Patches in SpielplanOffline"
 TOOL_DIR="${SPO_TOOL_DIR:-/srv/spielplanoffline/SpielplanOffline}"
 if [ -d "$TOOL_DIR" ]; then
     if grep -q 'label:\\"\$(cat ' "$TOOL_DIR/runscript.awk" 2>/dev/null; then

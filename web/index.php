@@ -39,13 +39,22 @@ $teams = readTeams();
        dann bleibt der Kalender auf dem Stand des Downloads. Nur ein
        <em>Abo</em> der Adresse aktualisiert sich selbst.</p>
 
-    <p class="hint">Ebenfalls wichtig: <strong>ein Kalender gilt immer nur für
-       eine Saison.</strong> fussball.de vergibt pro Saison eigene Links, ein
-       Abo enthält deshalb nur die Spiele der Saison, für die es eingetragen
-       wurde. Zur neuen Saison erscheint hier ein neuer Kalender mit neuer
-       Adresse — die muss dann <em>zusätzlich abonniert</em> werden. Das alte
-       Abo aktualisiert sich nicht mehr und kann in der Kalender-App entfernt
-       werden.</p>
+    <p class="hint">Ebenfalls wichtig: <strong>die meisten Kalender gelten nur
+       für eine Saison.</strong> fussball.de vergibt Mannschaftslinks pro
+       Saison, ein Abo enthält deshalb nur die Spiele der Saison, für die es
+       eingetragen wurde. Zur neuen Saison erscheint hier ein neuer Kalender mit
+       neuer Adresse — die muss dann <em>zusätzlich abonniert</em> werden. Das
+       alte Abo aktualisiert sich nicht mehr und kann in der Kalender-App
+       entfernt werden. Kalender, die aus einem Vereinslink stammen, sind davon
+       ausgenommen; sie sind oben als <em>nicht saisongebunden</em>
+       gekennzeichnet und laufen von selbst weiter.</p>
+
+    <p class="hint">Das Abzeichen hinter jedem Kalender sagt, woran er ist.
+       <em>Vermutlich beendet</em> heißt: für diese Mannschaft steht kein Spiel
+       mehr an. Ganz sicher ist das nie — fussball.de nennt kein Saisonende,
+       und Nachhol- oder Pokalspiele können noch dazukommen. In beendeten
+       Kalendern steht am Ende zusätzlich ein Termin mit demselben Hinweis,
+       damit er auch in der Kalender-App auffällt.</p>
 
     <p class="nav">Eine Mannschaft fehlt?
        <a href="/add_team.php">Neue Mannschaft eintragen</a> (nur mit Zugangsdaten).</p>

@@ -147,7 +147,11 @@ info "Linux-Overrides: mysetup.sh"
 install -m 755 "$REPO_DIR/scripts/update_all.sh"    "$SPO_DIR/update_all.sh"
 install -m 755 "$REPO_DIR/scripts/selftest.sh"      "$SPO_DIR/selftest.sh"
 install -m 755 "$REPO_DIR/scripts/set_password.sh" "$SPO_DIR/set_password.sh"
-info "Skripte: update_all.sh, selftest.sh, set_password.sh"
+# saison.sh wird von update_all.sh und selftest.sh gesourct und muss deshalb
+# neben ihnen liegen — update_all.sh bricht ohne sie ab. Kein +x: sie ist eine
+# Bibliothek, kein Programm.
+install -m 644 "$REPO_DIR/scripts/saison.sh"        "$SPO_DIR/saison.sh"
+info "Skripte: update_all.sh, selftest.sh, set_password.sh, saison.sh"
 
 # Pfade dieser Installation für die installierten Skripte festhalten. Ohne das
 # behielten update_all.sh und selftest.sh ihre eingebauten Vorgaben und würden
