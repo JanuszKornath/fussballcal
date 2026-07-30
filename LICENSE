@@ -1,16 +1,46 @@
-MIT License
+fussballcal Noncommercial License
+(based on the MIT License, with a noncommercial restriction)
 
 Copyright (c) 2026 Janusz Kornath
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+SCOPE
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+This license covers the original work in this repository: the contents of
+scripts/, web/, nginx/, cron/ and the accompanying documentation.
+
+It does NOT cover vendor/SpielplanOffline/. That directory contains
+third-party software by H. Falcke (originally distributed via
+astro.ru.nl/~falcke/fussball2csv), which its author provides as "thanksware"
+for private and amateur-club use. It remains subject to the author's own
+terms; see vendor/README.md.
+
+GRANT
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to use,
+copy, modify, merge, publish, distribute and sublicense copies of the
+Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+1. NONCOMMERCIAL USE ONLY. The Software may be used, copied, modified and
+   distributed for private, personal, educational and amateur sports club
+   purposes only. Commercial use is not permitted.
+
+   "Commercial use" means any use that is primarily intended for or directed
+   toward commercial advantage or monetary compensation. This includes, but is
+   not limited to, selling the Software or copies of it, selling access to a
+   service built on it, and operating it as part of a paid or advertising-
+   financed offering.
+
+   An amateur sports club making schedules available to its own members,
+   players and their families is not commercial use for the purposes of this
+   license, even where the club charges membership fees.
+
+   For a commercial license, contact the copyright holder.
+
+2. ATTRIBUTION. The above copyright notice, this permission notice and the
+   noncommercial restriction shall be included in all copies or substantial
+   portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -19,3 +49,19 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+--------------------------------------------------------------------------
+Unverbindliche deutsche Zusammenfassung (rechtlich gilt der englische Text
+oben):
+
+Der eigene Code dieses Repos (scripts/, web/, nginx/, cron/, Dokumentation)
+darf frei benutzt, verändert und weitergegeben werden — für private Zwecke
+und für Amateurvereine. Kommerzielle Nutzung ist nicht gestattet; dafür bitte
+beim Rechteinhaber melden. Ein Verein, der die Spielpläne seinen Mitgliedern
+bereitstellt, gilt nicht als kommerzielle Nutzung, auch wenn er
+Mitgliedsbeiträge erhebt. Copyright-Hinweis und diese Einschränkung müssen bei
+Weitergabe mitgegeben werden. Es gibt keine Gewährleistung und keine Haftung.
+
+Für vendor/SpielplanOffline/ gilt diese Lizenz nicht: Das Tool stammt von
+H. Falcke und steht unter seinen eigenen Bedingungen ("thanksware" für den
+nichtkommerziellen und privaten Bereich, siehe vendor/README.md).

@@ -4,6 +4,12 @@ Automatisierter Dienst, der über SpielplanOffline (von H. Falcke, ursprünglich
 astro.ru.nl/~falcke/fussball2csv) Spielpläne von fussball.de in ICS-Dateien
 umwandelt und per `webcal://` abonnierbar macht.
 
+Gedacht ist das für den Amateurbereich: Ein Verein (oder eine Familie mit drei
+Mannschaften im Haushalt) stellt sich die Spielpläne einmal auf einen kleinen
+Server, und alle Beteiligten abonnieren sie in ihrer Kalender-App, statt jede
+Woche auf fussball.de nachzusehen. Für **nichtkommerzielle** Nutzung — siehe
+[Lizenz und Dank](#lizenz-und-dank).
+
 SpielplanOffline liegt **vendored unter `vendor/SpielplanOffline/` direkt in
 diesem Repo**. Installation und Betrieb laden nichts von astro.ru.nl oder
 anderen externen Quellen nach — alles Nötige ist Teil dieses Repos
@@ -53,7 +59,7 @@ und Spielorte stehen dagegen im Klartext. SpielplanOffline lädt deshalb den
 Font, rendert die Codepoints mit **ImageMagick** zu einem Bild, liest sie per
 **tesseract** (OCR) zurück und baut daraus eine Übersetzungstabelle. Genau diese
 Kette ist der empfindliche Teil des Aufbaus — siehe
-[Fehlersuche](#fehlersuche-keine-datumszeitangaben-im-kalender).
+[Fehlersuche](#fehlersuche-keine-datums-zeitangaben-im-kalender).
 
 Drei Stellen des Tools funktionieren unter Debian/Ubuntu nicht und sind in
 `vendor/` **lokal gepatcht** (Details: `vendor/README.md`). Nach einem Update
@@ -71,6 +77,17 @@ verschoben und via nginx als `text/calendar` ausgeliefert wird.
 Die Installation erfolgt komplett aus diesem Repo — es wird nichts aus dem
 Internet nachgeladen. SpielplanOffline (V2.9) liegt fertig eingecheckt unter
 `vendor/SpielplanOffline/` (Details und Update-Anleitung: `vendor/README.md`).
+
+**Vorausgesetzt wird ein Debian-artiges System** (entwickelt und betrieben auf
+Debian 12/13 bzw. Ubuntu) mit nginx und PHP-FPM. Auf anderen Distributionen
+läuft der eigentliche Kern genauso — es sind Shell, gawk, ImageMagick,
+tesseract und PHP —, aber drei Pfade in `deploy.sh` und im vhost sind
+Debian-typisch und müssen dann angepasst werden:
+`/etc/nginx/sites-available` + `sites-enabled` (RHEL-artige Systeme kennen nur
+`conf.d/`), der Socket `/run/php/php-fpm.sock` und die Webserver-Gruppe
+`www-data` (überschreibbar per `WEB_GROUP`). Ein Rechner mit 1 GB RAM reicht;
+Rechenzeit braucht nur die OCR, und die läuft alle sechs Stunden für ein paar
+Sekunden pro Mannschaft.
 
 ```bash
 sudo apt update
@@ -176,8 +193,33 @@ sudo /srv/spielplanoffline/selftest.sh
 Die eingetragenen Kalender in `/srv/spielplanoffline/teams.txt` bleiben dabei
 unangetastet.
 
-TLS-Terminierung und Domain-Routing übernimmt euer zentraler Reverse Proxy;
-dieser nginx-vhost dient nur als internes Backend im LXC-Container (Port 80).
+### TLS: ein Reverse Proxy gehört davor
+
+Der vhost aus diesem Repo lauscht auf **Port 80, ohne TLS** — und dabei bleibt
+es: Zertifikate, Domain-Routing und HTTPS sind nicht Teil dieses Projekts.
+Daraus folgen zwei Betriebsarten, und nur zwei:
+
+**Im eigenen Netz** (Heimnetz, Vereins-LAN, VPN) reicht der Dienst, wie er ist.
+Abonniert wird über `http://` bzw. `webcal://` auf die lokale Adresse, ein
+Proxy ist nicht nötig.
+
+**Aus dem Internet erreichbar** nur **hinter einem Reverse Proxy**, der TLS
+terminiert (nginx, Traefik, Caddy, HAProxy, ein Fertig-Setup auf dem Router …)
+und auf Port 80 dieses Rechners weiterleitet. fussballcal ist dann internes
+Backend. Genau für diesen Aufbau sind `LISTEN_ADDR` und `TRUSTED_PROXY` da
+(siehe [Absicherung im öffentlichen Netz](#absicherung-im-öffentlichen-netz)).
+
+Ohne TLS davor gehört der Dienst nicht ins offene Internet: Die Zugangsdaten
+des Eintrage-Formulars gingen bei Basic Auth sonst praktisch im Klartext (nur
+base64-kodiert) über die Leitung.
+
+> TLS direkt in diesen vhost zu legen — etwa per `certbot --nginx` — ist nicht
+> vorgesehen und wird hier auch nicht beschrieben: `deploy.sh` schreibt
+> `/etc/nginx/sites-available/fussballcal.conf` bei **jedem** Rollout aus dem
+> Repo neu, jede von Hand oder von certbot ergänzte TLS-Konfiguration wäre
+> beim nächsten `git pull && sudo scripts/deploy.sh` wieder weg. Wer das
+> trotzdem will, pflegt den vhost ab dann selbst und rollt nur noch mit
+> `--no-nginx` aus.
 
 ### Zugang zum Formular
 
@@ -203,10 +245,10 @@ Zugangsdaten pflegt `set_password.sh` (die Datei liegt außerhalb des
 Web-Verzeichnisses und gehört `root:www-data`, Rechte `640`):
 
 ```bash
-sudo /srv/spielplanoffline/set_password.sh                 # Passwort für "admin" ändern
-sudo /srv/spielplanoffline/set_password.sh --user papa     # weiteren Benutzer anlegen
-sudo /srv/spielplanoffline/set_password.sh --random        # Zufallspasswort erzeugen und anzeigen
-sudo /srv/spielplanoffline/set_password.sh --remove papa   # Benutzer löschen
+sudo /srv/spielplanoffline/set_password.sh                    # Passwort für "admin" ändern
+sudo /srv/spielplanoffline/set_password.sh --user trainer     # weiteren Benutzer anlegen
+sudo /srv/spielplanoffline/set_password.sh --random           # Zufallspasswort erzeugen und anzeigen
+sudo /srv/spielplanoffline/set_password.sh --remove trainer   # Benutzer löschen
 ```
 
 Ein nginx-Reload ist danach nicht nötig — die Datei wird bei jeder Anfrage neu
@@ -222,17 +264,17 @@ pro Sekunde mit kurzen Spitzen bis fünf, danach antwortet nginx mit `429`. Die
 
 Zwei Dinge, die diese Anmeldung *nicht* leistet: Die Zugangsdaten gehen bei
 Basic Auth nur base64-kodiert über die Leitung — das ist in Ordnung, solange
-der vorgelagerte Reverse Proxy TLS terminiert; ohne TLS davor gehört der Dienst
-nicht ins Internet. Und die fertigen Kalender bleiben absichtlich öffentlich:
-wer die `ics`-Adresse kennt, kann sie abonnieren. Geschützt ist nur das
-*Eintragen* und *Löschen*.
+irgendwo davor TLS terminiert wird (siehe
+[TLS](#tls-ein-reverse-proxy-gehört-davor)); ohne TLS gehört
+der Dienst nicht ins Internet. Und die fertigen Kalender bleiben absichtlich
+öffentlich: wer die `ics`-Adresse kennt, kann sie abonnieren. Geschützt ist nur
+das *Eintragen* und *Löschen*.
 
 ### Absicherung im öffentlichen Netz
 
-Der vhost ist als internes Backend hinter einem Reverse Proxy gedacht. Sobald
-der Dienst aus dem Internet erreichbar ist, sind zwei Fragen zu klären: **worauf
-lauscht nginx** und **wer darf fragen**. Für beides gibt es eine Variable beim
-Rollout:
+Sobald der Dienst aus dem Internet erreichbar ist — also hinter einem Reverse
+Proxy, siehe oben —, sind zwei Fragen zu klären: **worauf lauscht nginx** und
+**wer darf fragen**. Für beides gibt es eine Variable beim Rollout:
 
 ```bash
 sudo LISTEN_ADDR=10.0.0.42 TRUSTED_PROXY=10.0.0.0/24 scripts/deploy.sh
@@ -245,10 +287,10 @@ nichts.
 
 **`LISTEN_ADDR`** bindet Port 80 an genau eine Adresse — auf allen anderen
 Interfaces existiert der Port danach nicht mehr (`ss -ltn` zeigt es). Das ist
-die wirksamste Einzelmaßnahme, wenn der Container außer dem internen Netz noch
+die wirksamste Einzelmaßnahme, wenn der Rechner außer dem internen Netz noch
 irgendetwas anderes sieht. Ohne die Variable bleibt es bei allen Adressen.
 
-> Nur mit **fester** Container-Adresse benutzen. Hängt die Adresse an DHCP oder
+> Nur mit **fester** Adresse benutzen. Hängt die Adresse an DHCP oder
 > kommt das Netz erst nach nginx hoch, findet nginx beim Start nichts zum
 > Binden und verweigert den Dienst. Im Zweifel `LISTEN_ADDR` weglassen und die
 > Abgrenzung der Firewall überlassen.
@@ -272,7 +314,8 @@ gesetzt, antwortet der vhost wie bisher jedem — `deploy.sh` weist am Ende
 darauf hin.
 
 Beides ersetzt **keine Firewall**; es ist die Schicht darunter, falls der
-Container doch einmal direkt erreichbar ist. Die harte Grenze zieht der Host:
+Rechner doch einmal direkt erreichbar ist. Die harte Grenze zieht die Firewall
+davor — auf dem Host, dem Router oder im Container selbst:
 
 ```bash
 # nftables: Port 80 nur vom Reverse Proxy
@@ -283,16 +326,16 @@ sudo ufw deny 80/tcp
 ```
 
 Was am Ende zählt, steht damit an drei Stellen, und keine davon ist überflüssig:
-Routing/NAT auf dem Host entscheidet, was den Container überhaupt erreicht, die
-Firewall filtert den Rest, und `LISTEN_ADDR`/`TRUSTED_PROXY` sorgen dafür, dass
-nginx auch dann nicht antwortet, wenn die beiden anderen einmal falsch stehen.
+Routing/NAT entscheidet, was den Rechner überhaupt erreicht, die Firewall
+filtert den Rest, und `LISTEN_ADDR`/`TRUSTED_PROXY` sorgen dafür, dass nginx
+auch dann nicht antwortet, wenn die beiden anderen einmal falsch stehen.
 
 Was sonst noch mehr bringt als jede Änderung an diesem Code: automatische
 Sicherheitsupdates für nginx und PHP (`unattended-upgrades`).
 
 ### Fehlersuche: es erscheint die nginx-Welcome-Page
 
-Wer beim Aufruf der Container-IP die Seite *"Welcome to nginx!"* sieht, hat
+Wer beim Aufruf der Server-IP die Seite *"Welcome to nginx!"* sieht, hat
 noch Debians Default-Site aktiv. Beim Zugriff über die IP passt kein
 `server_name`, also liefert nginx den vhost aus, der auf Port 80 als
 `default_server` markiert ist — und das ist dann die Default-Site, nicht
@@ -481,7 +524,7 @@ läuft.
 Heim/Auswärts korrekt da, aber ohne Datum und Uhrzeit:
 
 ```
-28      [FEHLER?] 0.0.0         Bovender SV - 1. SC Göttingen 05  (Bovenden A-Platz, …) [Auswärts]
+28      [FEHLER?] 0.0.0         SV Beispiel - TSV Musterstadt  (Beispieldorf A-Platz, …) [Auswärts]
  Keine Zeit gefunden Kein Datum gefunden
 ------------------------------------------------------------------------
 FEHLER!!! Mindestens ein Datum stimmt nicht.
@@ -587,8 +630,9 @@ sudo visudo -f /etc/sudoers.d/fussballcal
 ```
 
 ```
-# nur das Deploy-Skript, kein allgemeines NOPASSWD
-badmin ALL=(root) NOPASSWD: /srv/fussballcal/scripts/deploy.sh
+# nur das Deploy-Skript, kein allgemeines NOPASSWD.
+# <benutzer> durch das Konto ersetzen, unter dem der Rollout läuft.
+<benutzer> ALL=(root) NOPASSWD: /srv/fussballcal/scripts/deploy.sh
 ```
 
 Achtung: `deploy.sh` kopiert Dateien aus dem Checkout als root. Wer in den
@@ -596,58 +640,63 @@ Checkout schreiben darf, ist mit dieser Regel faktisch root — vertretbar, wenn
 der Benutzer ohnehin der Server-Administrator ist, sonst besser bei der
 Passwortabfrage bleiben.
 
-## Offene Punkte (TODO)
+## Was erfahrungsgemäß bricht
 
-- [x] Aufrufkonvention von SpielplanOffline gegen das Tar-Archiv (V2.9) verifiziert
-      und `update_all.sh` darauf umgestellt (`-var`-Parameterdatei, `STYLE=ICS`).
-- [x] `vendor/SpielplanOffline/` (V2.9) eingecheckt — das Repo ist damit
-      self-contained, Installation und Betrieb laden nichts mehr von
-      astro.ru.nl nach.
-- [x] Erster Serverlauf lieferte Termine ohne Datum/Uhrzeit. Ursache gefunden und
-      behoben: Debian/Ubuntu verbieten `label:@datei` in ImageMagick, damit
-      scheiterte die OCR-Entschlüsselung der Datumsangaben (`vendor/README.md`).
-      Zusätzlich schrieb `iconv.perl` die `.ics` als Latin-1 statt UTF-8.
-- [x] `update_all.sh` verwirft fehlerhafte ICS-Dateien, statt einen funktionierenden
-      Kalender damit zu überschreiben; `scripts/selftest.sh` prüft die Toolchain.
-- [x] Zweite Ursache für fehlende Datumsangaben behoben: fussball.de nutzt
-      inzwischen mehrere Obfuskations-Fonts, bei den größeren brach ImageMagick
-      mit `width or height exceeds limit` ab. Die Seitenlänge der OCR-Bilder ist
-      jetzt selbstregelnd (`vendor/README.md`).
-- [x] Rollout in `scripts/deploy.sh` gebündelt: eine Rechteeskalation statt
-      fünfzehn einzelner `sudo`-Befehle. Das beseitigt die sudo-Mails
-      „a password is required" und die dadurch unvollständigen Rollouts
-      (siehe [sudo-Mails](#sudo-mails-a-password-is-required)).
-- [x] End-to-End-Testlauf gegen das echte fussball.de auf dem Server: am
-      26.07.2026 erfolgreich, 39 Termine mit Datum und Uhrzeit. Gegen die
-      Mannschaftsseite geprüft — Datum, Anstoßzeit und Paarung stimmen überein,
-      inklusive der Freitags- und Samstagsspiele mit abweichenden Anstoßzeiten.
-- [ ] Rechtliche Prüfung bei öffentlicher Bereitstellung mehrerer fremder Vereine
-      (siehe Hinweis unten).
-- [x] `add_team.php` liegt hinter HTTP-Basic-Auth, die Kalenderübersicht
-      (`index.php`) und die `ics`-Dateien bleiben offen zugänglich (siehe
-      [Zugang zum Formular](#zugang-zum-formular)). Massen-Submits durch
-      Unbefugte sind damit erledigt; ein Captcha braucht es nicht mehr. Das
-      Löschen liegt hinter derselben Anmeldung und zusätzlich hinter einem
-      CSRF-Token — Basic-Auth allein schützt nicht davor, dass eine fremde
-      Seite eine Anfrage im Namen des angemeldeten Benutzers auslöst.
-- [x] Härtung für den Betrieb am öffentlichen Netz: Rate-Limit vor dem
-      Formular, `LISTEN_ADDR` (Port 80 nur auf einer Adresse) und
-      `TRUSTED_PROXY` (nur der Reverse Proxy bekommt Antworten), bcrypt mit
-      Kostenfaktor 12 auch im `htpasswd`-Zweig, keine Versionsnummern in
-      Server- und `X-Powered-By`-Header (siehe
-      [Absicherung im öffentlichen Netz](#absicherung-im-öffentlichen-netz)).
-- [ ] Automatische Sicherheitsupdates (`unattended-upgrades`) auf dem Server
-      einrichten — steht außerhalb dieses Repos, gehört aber dazu.
-
-Fussball.de ändert Layout und Font-Obfuskation regelmäßig. Wenn die
-Datumsangaben irgendwann wieder fehlen, führt der Abschnitt
-[Fehlersuche](#fehlersuche-keine-datumszeitangaben-im-kalender) durch die
+Fussball.de ändert Layout und Font-Obfuskation regelmäßig — das ist der einzige
+Teil dieses Aufbaus, der von außen kaputtgehen kann. Wenn die Datumsangaben
+irgendwann wieder fehlen, führt der Abschnitt
+[Fehlersuche](#fehlersuche-keine-datums-zeitangaben-im-kalender) durch die
 Eingrenzung; im Zweifel ist eine neuere SpielplanOffline-Version nötig, die
-dann wieder unter `vendor/` eingecheckt wird (Patches nicht vergessen).
+dann wieder unter `vendor/` eingecheckt wird (Patches nicht vergessen, siehe
+`vendor/README.md`).
 
-## Rechtlicher Hinweis
+Zwei Dinge gehören zum Betrieb, stehen aber außerhalb dieses Repos:
+automatische Sicherheitsupdates für nginx und PHP (`unattended-upgrades`) und
+eine Firewall vor Port 80 (siehe
+[Absicherung im öffentlichen Netz](#absicherung-im-öffentlichen-netz)).
 
-Das Tool ist laut Autor "thanksware" für private/Vereins-Nutzung gedacht. Bei
-öffentlicher Weiterverbreitung für viele fremde Vereine – und auch beim
-Einchecken des Tools in ein **öffentliches** Repo (`vendor/`) – ggf. vorher
-kurz beim Autor (h.falcke@astro.ru.nl) nachfragen.
+## Mitwirken
+
+Fehlerberichte und Pull Requests sind willkommen — besonders Anpassungen für
+andere Distributionen und Rückmeldungen, wenn fussball.de wieder etwas geändert
+hat. Zwei Bitten: Änderungen an `vendor/SpielplanOffline/` bleiben auf das
+Nötigste beschränkt und werden im Quelltext mit `LOKALER PATCH (fussballcal)`
+markiert, damit `scripts/selftest.sh` sie findet und ein Versionsupdate
+nachvollziehbar bleibt. Und wer am Rollout schraubt, prüft bitte, dass
+`deploy.sh` idempotent bleibt.
+
+## Lizenz und Dank
+
+**Dank** geht an **H. Falcke**, den Autor von *SpielplanOffline*
+(`vendor/SpielplanOffline/`, urspr. astro.ru.nl/~falcke/fussball2csv). Ohne
+sein `gawk`-Skript, das die Font-Verschleierung von fussball.de auflöst, gäbe
+es dieses Projekt nicht. Er schreibt dazu selbst:
+
+> Das Programm ist „thanksware" (also kostenlos) und kann für den
+> nichtkommerziellen (Amateurvereine) und privaten Bereich mit einem kurzen
+> Dankeschön frei benutzt werden.
+
+Wer fussballcal einsetzt, sagt also am besten auch ihm kurz danke.
+
+**Lizenz.** Aus diesen Bedingungen folgt die Lizenz dieses Repos: Der eigene
+Code (`scripts/`, `web/`, `nginx/`, `cron/` und diese Dokumentation) darf frei
+benutzt, verändert und weitergegeben werden — **für private Zwecke und für
+Amateurvereine. Kommerzielle Nutzung ist nicht gestattet.** Der volle Text
+steht in [`LICENSE`](LICENSE). Für `vendor/SpielplanOffline/` gilt weiterhin
+allein das, was der Autor dort festgelegt hat (siehe `vendor/README.md`) — die
+Lizenz dieses Repos erstreckt sich nicht darauf.
+
+Kommerziell heißt hier: verkaufen, als Teil eines kostenpflichtigen oder
+werbefinanzierten Angebots betreiben, oder sonst überwiegend zum Geldverdienen
+einsetzen. Ein Verein, der seine Spielpläne für seine Mitglieder bereitstellt,
+ist damit ausdrücklich nicht gemeint — auch dann nicht, wenn er einen
+Mitgliedsbeitrag erhebt.
+
+**Zu den Daten.** Die erzeugten Kalender enthalten Spielplandaten von
+fussball.de (DFB). Dieses Projekt steht in keiner Verbindung zum DFB und ist
+weder von ihm unterstützt noch autorisiert. Es holt dieselben Seiten, die auch
+ein Browser lädt, alle sechs Stunden je eingetragener Mannschaft — der
+sinnvolle Rahmen ist der eigene Verein bzw. die eigenen Kinder, nicht das
+systematische Absaugen ganzer Verbandsdatenbestände. Wer den Dienst für viele
+fremde Vereine öffentlich anbietet, klärt die Zulässigkeit besser vorher selbst
+ab.

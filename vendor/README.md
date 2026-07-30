@@ -65,9 +65,9 @@ Sonst gilt eine Datei aus einem früheren Lauf fälschlich als Erfolg.
 ### 3. `iconv.perl` — UTF-8-Ausgabe
 
 Der Ausgabe-Dateihandle hatte keine `:utf8`-Schicht. Perl schrieb die
-dekodierten Strings deshalb als Latin-1, aus `Göttingen` wurde in der `.ics`
-`G\366ttingen`. RFC 5545 schreibt UTF-8 vor; Kalender-Apps zeigen sonst kaputte
-Umlaute. Der Patch öffnet die Ausgabedatei mit `>:utf8`.
+dekodierten Strings deshalb als Latin-1, aus `Mönchengladbach` wurde in der
+`.ics` `M\366nchengladbach`. RFC 5545 schreibt UTF-8 vor; Kalender-Apps zeigen
+sonst kaputte Umlaute. Der Patch öffnet die Ausgabedatei mit `>:utf8`.
 
 ## Auf eine neuere Version aktualisieren
 
@@ -93,8 +93,22 @@ Danach auf dem Server neu ausrollen (`git pull && sudo scripts/deploy.sh`, siehe
 Installations-Abschnitt im Haupt-README) und prüfen, ob die
 `-var`-Aufrufkonvention von `update_all.sh` noch zur neuen Version passt.
 
-## Lizenzhinweis
+## Lizenzhinweis und Dank
 
-SpielplanOffline ist "thanksware" von H. Falcke (h.falcke@astro.ru.nl) für
-private/Vereins-Nutzung. Vor Weiterverbreitung in einem **öffentlichen** Repo
-ggf. kurz beim Autor nachfragen.
+SpielplanOffline stammt von **H. Falcke** und ist „thanksware". Der Autor
+schreibt dazu:
+
+> Das Programm ist „thanksware" (also kostenlos) und kann für den
+> nichtkommerziellen (Amateurvereine) und privaten Bereich mit einem kurzen
+> Dankeschön frei benutzt werden.
+
+Dieses Verzeichnis liegt deshalb unverändert-in-der-Sache (bis auf die drei
+oben dokumentierten Linux-Patches) mit im Repo — und der Dank geht an den
+Autor: ohne sein `gawk`-Skript gäbe es fussballcal nicht.
+
+Daraus folgt zweierlei:
+
+* Die Lizenz des übrigen Repos (`../LICENSE`) gilt **nicht** für dieses
+  Verzeichnis. Für SpielplanOffline gilt allein, was der Autor festgelegt hat.
+* Wer fussballcal benutzt, benutzt damit auch SpielplanOffline — also
+  nichtkommerziell, und am besten mit einem kurzen Dankeschön an den Autor.
