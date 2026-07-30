@@ -10,10 +10,10 @@
 #
 # Aufruf:
 #   sudo ./set_password.sh                    # fragt interaktiv nach dem Passwort
-#   sudo ./set_password.sh --user papa        # anderer Benutzername
+#   sudo ./set_password.sh --user trainer     # anderer Benutzername
 #   sudo ./set_password.sh --random           # Zufallspasswort, wird ausgegeben
 #   echo 'geheim' | sudo ./set_password.sh --stdin   # für Skripte
-#   sudo ./set_password.sh --remove papa      # Benutzer löschen
+#   sudo ./set_password.sh --remove trainer   # Benutzer löschen
 #
 # Ein bereits vorhandener Eintrag desselben Benutzers wird ersetzt, andere
 # Benutzer bleiben stehen. Ein nginx-Reload ist nicht nötig: die Passwortdatei
