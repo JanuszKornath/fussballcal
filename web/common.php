@@ -23,11 +23,93 @@ define('ICS_DIR',     $deployed['ics_dir']     ?? '/var/www/fussballcal/ics');
 const MAX_TEAMS = 200; // simple Obergrenze gegen Missbrauch
 
 /**
+ * Liest die Statusdatei, die update_all.sh neben die ICS legt.
+ *
+ * Format ist bewusst flach ("schlüssel=wert", #-Kommentare) — das Projekt
+ * kommt ohne Datenbank aus. Fehlt die Datei, war noch kein Update-Lauf da;
+ * dann gibt es hier ein leeres Array und die Seite zeigt keinen Saisonstatus.
+ *
+ * @return array<string, string>
+ */
+function readTeamState(string $slug): array
+{
+    if (preg_match('/^[a-z0-9_-]+$/', $slug) !== 1) {
+        return [];
+    }
+
+    $path = ICS_DIR . '/' . $slug . '.state';
+    if (!is_readable($path)) {
+        return [];
+    }
+
+    $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    if ($lines === false) {
+        return [];
+    }
+
+    $state = [];
+    foreach ($lines as $line) {
+        if ($line === '' || str_starts_with($line, '#') || !str_contains($line, '=')) {
+            continue;
+        }
+        [$key, $value] = explode('=', $line, 2);
+        $state[trim($key)] = trim($value);
+    }
+
+    return $state;
+}
+
+/**
+ * Beschreibt den Saisonstatus eines Kalenders für die Anzeige.
+ *
+ * Bewusst zurückhaltend formuliert: "vermutlich beendet" ist eine Heuristik.
+ * fussball.de nennt kein Saisonende — das einzige Signal ist, dass keine
+ * Spiele mehr anstehen, und Nachhol- oder Pokalspiele können das zurückdrehen.
+ *
+ * @param array<string, string> $state
+ * @return array{0: string, 1: string, 2: string}|null [CSS-Klasse, Kurztext, Erklärung]
+ */
+function seasonBadge(array $state): ?array
+{
+    $saison = $state['saison'] ?? '';
+    $status = $state['status'] ?? '';
+
+    // Ohne Saison in der URL ist der Eintrag ein Vereinslink. Der ist gar nicht
+    // saisongebunden — die Abfrage an fussball.de enthält dann weder Saison noch
+    // team-id, der Kalender wandert also von selbst in die neue Saison. Für den
+    // wäre "Saison 25/26" schlicht falsch.
+    if ($saison === '' || strlen($saison) !== 4) {
+        return $status === 'LAUFEND'
+            ? ['laeuft', 'nicht saisongebunden',
+               'Ein Vereinslink umfasst alle Mannschaften und läuft mit der neuen '
+               . 'Saison von selbst weiter — dieses Abo muss nicht gewechselt werden.']
+            : null;
+    }
+
+    $label = 'Saison ' . substr($saison, 0, 2) . '/' . substr($saison, 2, 2);
+
+    return match ($status) {
+        'LAUFEND' => ['laeuft', $label, 'Es stehen noch Spiele an.'],
+        'SAISONENDE_VERMUTLICH' => ['endet', $label . ' – vermutlich beendet',
+            'Für diese Mannschaft steht kein Spiel mehr an. Zur neuen Saison wird '
+            . 'ein neuer Kalender hier erscheinen, der zusätzlich abonniert werden muss. '
+            . 'Kommen doch noch Nachhol- oder Pokalspiele, läuft dieser Kalender weiter.'],
+        'KEINE_SPIELE_MEHR_ERWARTET' => ['beendet', $label . ' – beendet',
+            'Das Saisonfenster ist abgelaufen, es sind keine weiteren Spiele zu '
+            . 'erwarten. Der Kalender bleibt als Archiv stehen.'],
+        'VORSAISON' => ['wartet', $label . ' – noch keine Spiele',
+            'Der Spielplan ist auf fussball.de noch nicht veröffentlicht.'],
+        default => null,
+    };
+}
+
+/**
  * Liest teams.txt nach der gleichen Konvention wie update_all.sh
  * (Format "slug;url", Leerzeilen und #-Kommentare werden übersprungen) und
  * reichert jeden Eintrag mit dem Status der zugehörigen ICS-Datei an.
  *
- * @return list<array{slug: string, url: string, exists: bool, mtime: ?int}>
+ * @return list<array{slug: string, url: string, exists: bool, mtime: ?int,
+ *                    state: array<string, string>}>
  */
 function readTeams(): array
 {
@@ -65,6 +147,7 @@ function readTeams(): array
             'url'    => $url,
             'exists' => $exists,
             'mtime'  => $exists ? (filemtime($icsPath) ?: null) : null,
+            'state'  => readTeamState($slug),
         ];
     }
 
@@ -176,6 +259,15 @@ function deleteTeam(string $slug): array
     $icsThere = is_file($icsPath);
     $icsGone  = !$icsThere || @unlink($icsPath);
 
+    // Die Statusdatei gehört zum Kalender und hat ohne ihn keinen Sinn. Ein
+    // Fehlschlag ist hier kein Grund zur Warnung: sie wird nie ausgeliefert,
+    // und der nächste Update-Lauf legt sie ohnehin nicht wieder an, wenn die
+    // Zeile aus teams.txt verschwunden ist.
+    $statePath = ICS_DIR . '/' . $slug . '.state';
+    if (is_file($statePath)) {
+        @unlink($statePath);
+    }
+
     if (!$removed && !$icsThere) {
         return [false, "Kalender '$slug' war nicht (mehr) eingetragen."];
     }
@@ -266,6 +358,12 @@ function pageStyles(): string
         ul.calendars li { border-top: 1px solid #ddd; padding: 0.75rem 0; }
         .slug { font-weight: bold; }
         .status { color: #666; font-size: 0.85rem; }
+        .badge { font-size: 0.75rem; padding: 0.1rem 0.4rem; border-radius: 3px;
+                 border: 1px solid transparent; white-space: nowrap; cursor: help; }
+        .badge.laeuft  { background: #e6f4ea; color: #1e4620; border-color: #b7dfc2; }
+        .badge.endet   { background: #fff4e5; color: #6b4500; border-color: #e6cfa8; }
+        .badge.beendet { background: #f2f2f2; color: #444;    border-color: #ddd; }
+        .badge.wartet  { background: #eaf1fb; color: #1c3f6e; border-color: #bcd0ea; }
         .nav { margin-top: 2.5rem; border-top: 1px solid #ddd; padding-top: 1rem;
                color: #444; font-size: 0.9rem; }
         form.delete { display: inline; }
@@ -285,7 +383,8 @@ CSS;
  * der Anmeldung, die den POST auch verarbeitet), die öffentliche index.php
  * ruft ohne auf und zeigt damit gar keine Knöpfe.
  *
- * @param list<array{slug: string, url: string, exists: bool, mtime: ?int}> $teams
+ * @param list<array{slug: string, url: string, exists: bool, mtime: ?int,
+ *                   state: array<string, string>}> $teams
  */
 function renderCalendars(array $teams, string $host, ?string $csrf = null): void
 {
@@ -310,9 +409,13 @@ function renderCalendars(array $teams, string $host, ?string $csrf = null): void
         <?php
             $webcal = 'webcal://' . $host . '/ics/' . $team['slug'] . '.ics';
             $https  = 'https://' . $host . '/ics/' . $team['slug'] . '.ics';
+            $badge  = seasonBadge($team['state']);
         ?>
         <li>
             <span class="slug"><?= htmlspecialchars($team['slug']) ?></span>
+            <?php if ($badge !== null): ?>
+                <span class="badge <?= $badge[0] ?>" title="<?= htmlspecialchars($badge[2]) ?>"><?= htmlspecialchars($badge[1]) ?></span>
+            <?php endif; ?>
             &mdash; <a href="<?= htmlspecialchars($webcal) ?>">Abonnieren</a>
             <?php if ($csrf !== null): ?>
                 <?php // Löschen ist destruktiv: nur per POST, mit CSRF-Token und
@@ -330,6 +433,10 @@ function renderCalendars(array $teams, string $host, ?string $csrf = null): void
             <span class="status">
                 <?php if ($team['mtime'] !== null): ?>
                     zuletzt aktualisiert: <?= htmlspecialchars(date('d.m.Y H:i', $team['mtime'])) ?>
+                <?php elseif (($team['state']['status'] ?? '') === 'KEINE_SPIELE_MEHR_ERWARTET'): ?>
+                    <?php // Statusdatei ohne ICS: die Saison war schon vorbei, als der
+                          // Eintrag angelegt wurde. Ein Kalender entsteht hier nicht mehr. ?>
+                    kein Kalender &ndash; für diese Saison liefert fussball.de keine Spiele
                 <?php else: ?>
                     wird beim nächsten Update erzeugt
                 <?php endif; ?>

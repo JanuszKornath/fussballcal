@@ -170,9 +170,12 @@ Beide Skripte lesen die Pfade dieser Installation aus `spo.env` (von
 `deploy.sh` erzeugt); gesetzte Umgebungsvariablen haben Vorrang:
 `SPO_TOOL_DIR`, `SPO_CONFIG`, `SPO_OUTDIR`, `SPO_HOME`, `SPO_LOG`, dazu
 `SPO_ENV` für die Datei selbst und `SPO_LOCK` für die Lockdatei.
-`SPO_START` und `SPO_END` verschieben das Zeitfenster, in dem Spiele in den
-Kalender wandern — ohne Angabe reicht es von zwei Monaten in der Vergangenheit
-bis zwölf Monate in die Zukunft.
+Das Zeitfenster, in dem Spiele in den Kalender wandern, ergibt sich ohne weitere
+Angabe aus der Saison in der URL der jeweiligen Zeile. `SPO_SAISON_VORLAUF`,
+`SPO_SAISON_NACHLAUF`, `SPO_SAISON_KARENZ` und `SPO_SAISON_RANDABSTAND` stellen
+es und die Saisonerkennung ein, `SPO_START`/`SPO_END` setzen beides außer Kraft
+und geben ein festes Fenster für alle Zeilen vor. Einzelheiten unter
+[Woran das Tool das Saisonende erkennt](#woran-das-tool-das-saisonende-erkennt--und-woran-nicht).
 
 Zwei Läufe gleichzeitig gibt es nicht: `update_all.sh` hält ein `flock` auf
 `SPO_LOCK` und bricht mit *„Update läuft bereits"* ab, wenn ein Lauf länger
@@ -378,9 +381,13 @@ kopieren. Unterstützt werden drei Link-Typen:
 Der `#!/...`-Teil am Ende darf drin bleiben. Andere fussball.de-Seiten
 (Startseite, Tabellen, Suchergebnisse) funktionieren nicht.
 
-Mannschaftslinks enthalten die Saison (`.../saison/2526/...`) — ein Eintrag
-gilt damit **nur für diese eine Saison**. Was zum Saisonwechsel zu tun ist,
-steht unter [Saisonwechsel](#5-saisonwechsel).
+Mannschafts- und Staffellinks sind **saisongebunden**: die `team-id` bzw. die
+`staffel`-ID vergibt fussball.de pro Saison neu, bei Mannschaftslinks steht die
+Saison zusätzlich in der Adresse (`.../saison/2526/...`). Ein solcher Eintrag
+gilt damit nur für diese eine Saison. Ein **Vereinslink** dagegen ist es nicht —
+er enthält weder Saison noch team-id, und sein Kalender wandert von selbst in
+die neue Saison. Was zum Saisonwechsel zu tun ist, steht unter
+[Saisonwechsel](#5-saisonwechsel).
 
 ### 2. Den Link eintragen
 
@@ -492,10 +499,12 @@ noch einen 404.
 
 ### 5. Saisonwechsel
 
-fussball.de vergibt pro Saison eigene Mannschaftslinks — die Saison steckt in
-der Adresse (`.../saison/2526/...`). Ein Kalender bildet deshalb immer nur die
-Spiele **einer** Saison ab; er hört zum Saisonende einfach auf, statt mit den
-neuen Spielen weiterzulaufen.
+fussball.de vergibt pro Saison eigene Mannschafts- und Staffellinks — die Saison
+steckt in der Adresse (`.../saison/2526/...`), und die `team-id` gilt ohnehin nur
+für eine Spielzeit. Ein solcher Kalender bildet deshalb immer nur die Spiele
+**einer** Saison ab; er hört zum Saisonende einfach auf, statt mit den neuen
+Spielen weiterzulaufen. Vereinslinks (`.../verein/.../id/<ID>`) sind davon
+ausgenommen: sie enthalten keine Saison, ihr Kalender läuft von selbst weiter.
 
 Zum Saisonwechsel deshalb pro Mannschaft:
 
@@ -517,6 +526,76 @@ der bestehenden Zeile auf die neue Saison umschreiben. Dann bleibt die Abo-URL
 gleich und die Abonnenten müssen nichts tun — allerdings verschwindet damit
 auch der alte Spielplan aus dem Kalender, sobald der Cron-Job das nächste Mal
 läuft.
+
+### Woran das Tool das Saisonende erkennt — und woran nicht
+
+**Mit Gewissheit kann es nicht sagen, wann eine Saison vorbei ist.** Das liegt
+nicht am Tool, sondern an der Quelle: fussball.de liefert eine Druckansicht des
+Spielplans für ein angefragtes Datumsfenster, mit Datum, Uhrzeit, Heim, Gast,
+Ort, Ergebnis, Wettbewerb und Spielnummer. Kein Saisonende, keine Spieltagszahl,
+keine Tabelle. Das einzige Signal ist damit die **Abwesenheit von Spielen** — und
+die ist nicht endgültig: nach dem letzten Ligaspieltag folgen Nachhol-,
+Relegations- und Pokalspiele, und ein verlegtes Spiel verschwindet zunächst ganz
+aus der Ausgabe, um später mit neuem Datum wieder aufzutauchen.
+
+Was das Tool deshalb tut: es unterscheidet vier Zustände pro Kalender und legt
+sie neben der `.ics` in einer `<slug>.state` ab. Die Startseite zeigt sie als
+Abzeichen, das Log schreibt sie im Klartext.
+
+| Zustand | Bedeutung |
+|---|---|
+| `LAUFEND` | Es stehen noch Spiele an. |
+| `SAISONENDE_VERMUTLICH` | Termine vorhanden, aber keiner mehr in der Zukunft, und das letzte liegt länger als `SPO_SAISON_KARENZ` (21 Tage) zurück. |
+| `KEINE_SPIELE_MEHR_ERWARTET` | Zusätzlich ist das Saisonfenster abgelaufen. |
+| `VORSAISON` | Noch keine Spiele angesetzt — am Saisonanfang normal, kein Fehler. |
+| `LEER_UNERWARTET` | Keine Spiele mitten in der Saison. Verdächtig; die Ausgabe wird verworfen. |
+
+Der Nutzen liegt weniger in der Vorhersage als in der **Unterscheidung**: vorher
+war „keine Termine" gleichbedeutend mit „OCR kaputt", der Kalender fror ein und
+das Log füllte sich alle sechs Stunden mit derselben `FEHLER:`-Zeile. Jetzt sagt
+das Log, welcher der beiden Fälle vorliegt.
+
+Bei `SAISONENDE_VERMUTLICH` und `KEINE_SPIELE_MEHR_ERWARTET` hängt das Tool
+zusätzlich einen **Ganztags-Termin an den Kalender** („Saison 25/26 ist beendet —
+neuen Kalender abonnieren"). Das ist der einzige Kanal, der bestehende Abos
+erreicht: die Abonnenten stehen nirgends. Kommen doch noch Spiele, verschwindet
+der Hinweis beim nächsten Lauf von selbst — die `.ics` wird jedes Mal neu
+erzeugt.
+
+Eine leere Ausgabe wird **nie veröffentlicht**, aus keinem Grund. Die bestehende
+Datei ist der Spielplan der Saison; sie gegen einen leeren Kalender zu tauschen
+nähme den Abonnenten auch noch das Archiv.
+
+#### Das Abfragefenster
+
+Abgefragt wird pro Zeile das Saisonfenster aus der URL. Die Spielordnungen
+definieren das Spieljahr einheitlich als **1. Juli bis 30. Juni** — von der
+Bundesliga bis in die Kreisliga. Darauf allein kann man sich aber nicht
+verlassen: dieselbe Regel erlaubt den Sportinstanzen ausdrücklich, über den
+30. Juni hinaus anzusetzen, und das kommt vor. Der BFV hat die Saison 2019/20 von
+der Bayernliga abwärts bis zum **30. Juni 2021** verlängert; die Saison 2020/21
+fiel dafür aus. Auch die Nahtstellen sind bespielt — die Pokalrunden der neuen
+Saison liegen oft schon in der zweiten Julihälfte.
+
+Das Fenster reicht deshalb absichtlich über die nominelle Spielzeit hinaus:
+`SPO_SAISON_VORLAUF` (Vorgabe 1 Monat) davor, `SPO_SAISON_NACHLAUF` (Vorgabe
+6 Monate) danach. Für die Saison 25/26 wird also `2025-06-01 .. 2026-12-30`
+abgefragt. Zu weit kostet nichts — es ist derselbe eine Abruf, außerhalb der
+Saison liefert fussball.de einfach keine Zeilen. Zu eng würde stillschweigend
+abschneiden.
+
+Klebt das letzte gefundene Spiel trotzdem am Rand des Fensters (näher als
+`SPO_SAISON_RANDABSTAND`, Vorgabe 14 Tage), schreibt das Tool eine Warnung ins
+Log — dann ist `SPO_SAISON_NACHLAUF` zu erhöhen. Wer eine gestreckte Spielzeit
+von Hand abdecken will, setzt `SPO_START`/`SPO_END`; die gelten dann für alle
+Zeilen und schalten die Saisonlogik ab.
+
+Zeilen ohne erkennbare Saison in der URL (Vereinslinks) behalten das alte
+rollierende Fenster (−2 Monate bis +12 Monate) und bekommen keinen Saisonstatus.
+
+Die Klassifikation lässt sich ohne fussball.de prüfen:
+`scripts/selftest.sh` testet sie unter `[2] Saisonlogik` gegen synthetische
+Kalenderdateien.
 
 ## Fehlersuche: keine Datums-/Zeitangaben im Kalender
 
