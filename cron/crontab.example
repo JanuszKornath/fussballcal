@@ -1,2 +1,15 @@
+# Ohne MAILTO gehen Cron-Mails an den Besitzer der crontab (bei `sudo crontab
+# -e` also an root). Soll der Bericht woanders hin, hier eintragen — die Zeile
+# muss VOR den Jobs stehen, sonst gilt sie für sie nicht.
+#MAILTO=admin@example.org
+
 # Alle 6 Stunden alle Kalender aktualisieren
 0 */6 * * * /srv/spielplanoffline/update_all.sh
+
+# Viertelstündlich nachsehen, ob jemand am Eintrage-Formular Passwörter rät.
+# Das Skript schweigt im Normalfall; nur wenn es etwas zu melden gibt, schreibt
+# es einen Bericht auf stdout — und cron macht daraus die Mail. Wem das zu oft
+# oder zu selten meldet: Die Schwellen stehen oben in loginwatch.sh und lassen
+# sich hier übersteuern, z.B.
+#   */15 * * * * LOGINWATCH_BLOCKS=50 /srv/spielplanoffline/loginwatch.sh
+*/15 * * * * /srv/spielplanoffline/loginwatch.sh

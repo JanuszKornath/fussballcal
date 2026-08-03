@@ -33,6 +33,7 @@ fussballcal/
 │   ├── update_all.sh       # Cron-Wrapper: liest teams.txt, ruft SpielplanOffline auf
 │   ├── selftest.sh         # prüft die OCR-Toolchain (ImageMagick, tesseract, Patches)
 │   ├── set_password.sh     # Zugangsdaten für das Eintrage-Formular (Basic Auth)
+│   ├── loginwatch.sh       # Cron-Job: meldet gehäufte Fehlversuche am Formular
 │   ├── mysetup.sh          # Linux-Overrides für SpielplanOffline (Locale, kein "open")
 │   └── teams.txt.example   # Vorlage für die Team-Liste (slug;url) -> wird bei der
 │                           # Installation nach /srv/spielplanoffline/teams.txt kopiert
@@ -117,7 +118,7 @@ deshalb gibt es genau eine Passwortabfrage statt fünfzehn (siehe
 | Ziel | Inhalt |
 |---|---|
 | `/srv/spielplanoffline/SpielplanOffline/` | das Tool aus `vendor/` inkl. Patches und `mysetup.sh` |
-| `/srv/spielplanoffline/{update_all.sh,selftest.sh,set_password.sh}` | Wrapper, Selbsttest und Passwortverwaltung (ausführbar) |
+| `/srv/spielplanoffline/{update_all.sh,selftest.sh,set_password.sh,loginwatch.sh}` | Wrapper, Selbsttest, Passwortverwaltung und die Auswertung der Fehlversuche (ausführbar) |
 | `/srv/spielplanoffline/teams.txt` | Team-Liste — **nur wenn sie noch nicht existiert**; für die Webserver-Gruppe beschreibbar (664), damit `add_team.php` Zeilen anhängen kann |
 | `/srv/spielplanoffline/spo.env` | die Pfade dieser Installation; `update_all.sh` und `selftest.sh` lesen sie |
 | `/srv/spielplanoffline/work/` | Arbeitsverzeichnis (tmp/Fonts/Output) |
@@ -126,6 +127,7 @@ deshalb gibt es genau eine Passwortabfrage statt fünfzehn (siehe
 | `/etc/nginx/fussballcal.htpasswd` | Zugangsdaten fürs Formular — **nur wenn sie noch nicht existieren**; beim ersten Rollout wird ein Zufallspasswort erzeugt und einmalig ausgegeben |
 | `/etc/nginx/sites-{available,enabled}/fussballcal.conf` | vhost, danach `nginx -t` + Reload; Debians Default-Site wird dabei deaktiviert (sonst kommt die nginx-Welcome-Page statt fussballcal) |
 | `/etc/nginx/conf.d/fussballcal.conf` | http-Kontext des vhosts: Rate-Limit-Zone fürs Formular und die Proxy-Prüfung (`TRUSTED_PROXY`) — wird bei **jedem** Rollout neu geschrieben |
+| `/var/lib/fussballcal/` | Zwischenstand von `loginwatch.sh` (Leseposition im nginx-Log, mitgezählte Fehlversuche); `750`, weil dort IP-Adressen stehen |
 | `/var/log/spielplanoffline.log` | Logdatei (wird nie geleert) |
 
 Optionen: `--no-nginx` (vhost und Reload überspringen, z.B. wenn der vhost von
@@ -272,6 +274,63 @@ irgendwo davor TLS terminiert wird (siehe
 der Dienst nicht ins Internet. Und die fertigen Kalender bleiben absichtlich
 öffentlich: wer die `ics`-Adresse kennt, kann sie abonnieren. Geschützt ist nur
 das *Eintragen* und *Löschen*.
+
+### Wenn jemand am Formular klopft
+
+Geloggt werden Fehlversuche schon immer, und zwar von nginx selbst: Ein
+abgewiesener Versuch landet als `limiting requests … by zone
+"fussballcal_login"` im `/var/log/nginx/error.log` (und als `429` im
+`access.log`), ein falsches Passwort als `password mismatch`. Nur sieht das
+niemand — deshalb liest `loginwatch.sh` beides aus:
+
+```bash
+sudo /srv/spielplanoffline/loginwatch.sh --dry-run   # ganzes Log ansehen
+sudo /srv/spielplanoffline/loginwatch.sh --status    # aktueller Zwischenstand
+```
+
+Als Cron-Job (viertelstündlich, siehe `cron/crontab.example`) **schweigt das
+Skript im Normalfall vollständig**. Nur wenn eine Schwelle reißt, schreibt es
+einen Bericht auf die Standardausgabe — und was ein Cron-Job ausgibt, mailt
+cron an root. Das Skript verschickt also selbst keine Mail, kennt keinen MTA
+und braucht kein `mail`-Binary; wohin die Meldung geht, entscheidet allein
+`MAILTO` in der crontab.
+
+Ohne Schwellen wäre das unbrauchbar: Bei `rate=1r/s` erzeugt schon ein
+gemächlicher Angreifer mit zwei Anfragen pro Sekunde rund **86.000**
+abgewiesene Anfragen am Tag — pro Ereignis eine Mail, und `/var/mail/root`
+läuft die Platte voll. Gemeldet wird deshalb erst:
+
+| Auslöser | Vorgabe | Variable |
+|---|---|---|
+| Blocks (`429`) einer Adresse | ab 20 | `LOGINWATCH_BLOCKS` |
+| Fehllogins einer Adresse | ab 10 | `LOGINWATCH_AUTHFAILS` |
+| verschiedene Adressen gleichzeitig | ab 3 | `LOGINWATCH_IPS` |
+| Sendepause nach einer Meldung | 1 h, verdoppelt sich je Folgemeldung bis 24 h | `LOGINWATCH_COOLDOWN` |
+| Beobachtungsfenster | 24 h | `LOGINWATCH_WINDOW` |
+
+Während der Sendepause geht nichts verloren — es wird weitergezählt und kommt
+in der nächsten Meldung mit. Aus einem tagelangen Angriff werden so eine
+Handvoll Mails statt hunderttausender. Übersteuern lässt sich das direkt in der
+crontab-Zeile:
+
+```cron
+*/15 * * * * LOGINWATCH_BLOCKS=50 /srv/spielplanoffline/loginwatch.sh
+```
+
+Zwei Dinge werden bewusst **nicht** gezählt: die Zeile `no user/password was
+provided for basic authentication` — die entsteht bei jedem ganz normalen
+Seitenaufruf, bevor der Browser nach Zugangsdaten fragt —, und Fehlversuche
+anderer vhosts derselben nginx-Instanz. Beides zu zählen hieße, Fehlalarme zu
+melden. Der Selbsttest prüft genau das unter `[3] Fehlversuche am Formular`.
+
+Und was ist mit **fail2ban**? Das setzt einen Paketfilter voraus und wäre hier
+am wichtigsten Punkt wirkungslos: Hinter einem Reverse Proxy kommt die
+TCP-Verbindung vom Proxy, nicht vom Angreifer. `set_real_ip_from` sorgt zwar
+dafür, dass im Log die echte Client-Adresse steht, aber eine Firewall-Regel auf
+diese Adresse greift ins Leere — Pakete kommen von dort nie an. Wirksam wäre
+fail2ban nur auf dem Proxy selbst. Wer den Dienst ohne Proxy im flachen Netz
+betreibt, kann es zusätzlich einsetzen; die Logzeilen oben sind die passenden
+Muster dafür.
 
 ### Absicherung im öffentlichen Netz
 

@@ -35,7 +35,7 @@ set -euo pipefail
 # sudo setzt die Umgebung zurück (env_reset), die Overrides müssen bei der
 # Eskalation weiter unten also ausdrücklich mitgegeben werden.
 env_overrides=()
-for var in SPO_DIR WEB_DIR SPO_LOG WEB_GROUP ADMIN_USER LISTEN_ADDR TRUSTED_PROXY; do
+for var in SPO_DIR WEB_DIR SPO_LOG SPO_STATE_DIR WEB_GROUP ADMIN_USER LISTEN_ADDR TRUSTED_PROXY; do
     if [ -n "${!var-}" ]; then
         env_overrides+=("$var=${!var}")
     fi
@@ -44,6 +44,9 @@ done
 SPO_DIR="${SPO_DIR:-/srv/spielplanoffline}"
 WEB_DIR="${WEB_DIR:-/var/www/fussballcal}"
 LOG_FILE="${SPO_LOG:-/var/log/spielplanoffline.log}"
+# Zwischenstand von loginwatch.sh (Leseposition im nginx-Log, mitgezählte
+# Fehlversuche). Kein /tmp: der Zustand soll einen Neustart überleben.
+STATE_DIR="${SPO_STATE_DIR:-/var/lib/fussballcal}"
 # Gruppe des PHP-FPM-Workers — nur teams.txt wird für sie beschreibbar.
 WEB_GROUP="${WEB_GROUP:-www-data}"
 NGINX_CONF="/etc/nginx/sites-available/fussballcal.conf"
@@ -119,6 +122,11 @@ echo "------------------------------------------------------------------"
 install -d -m 755 "$SPO_DIR" "$SPO_DIR/work" "$WEB_DIR" "$WEB_DIR/ics"
 info "Verzeichnisse: $SPO_DIR, $SPO_DIR/work, $WEB_DIR/ics"
 
+# Zustandsverzeichnis für loginwatch.sh. 750, weil dort IP-Adressen von
+# Fehlversuchen stehen — das geht nur root etwas an.
+install -d -m 750 "$STATE_DIR"
+info "Zustandsverzeichnis: $STATE_DIR"
+
 # ------------------------------------------------------------------
 # 2. SpielplanOffline aus vendor/ (inklusive der Linux-Patches)
 #    cp -a überschreibt die Programmdateien, lässt aber alles unberührt, was
@@ -147,11 +155,12 @@ info "Linux-Overrides: mysetup.sh"
 install -m 755 "$REPO_DIR/scripts/update_all.sh"    "$SPO_DIR/update_all.sh"
 install -m 755 "$REPO_DIR/scripts/selftest.sh"      "$SPO_DIR/selftest.sh"
 install -m 755 "$REPO_DIR/scripts/set_password.sh" "$SPO_DIR/set_password.sh"
+install -m 755 "$REPO_DIR/scripts/loginwatch.sh"   "$SPO_DIR/loginwatch.sh"
 # saison.sh wird von update_all.sh und selftest.sh gesourct und muss deshalb
 # neben ihnen liegen — update_all.sh bricht ohne sie ab. Kein +x: sie ist eine
 # Bibliothek, kein Programm.
 install -m 644 "$REPO_DIR/scripts/saison.sh"        "$SPO_DIR/saison.sh"
-info "Skripte: update_all.sh, selftest.sh, set_password.sh, saison.sh"
+info "Skripte: update_all.sh, selftest.sh, set_password.sh, loginwatch.sh, saison.sh"
 
 # Pfade dieser Installation für die installierten Skripte festhalten. Ohne das
 # behielten update_all.sh und selftest.sh ihre eingebauten Vorgaben und würden
@@ -167,6 +176,7 @@ SPO_CONFIG="\${SPO_CONFIG:-$SPO_DIR/teams.txt}"
 SPO_OUTDIR="\${SPO_OUTDIR:-$WEB_DIR/ics}"
 SPO_HOME="\${SPO_HOME:-$SPO_DIR/work}"
 SPO_LOG="\${SPO_LOG:-$LOG_FILE}"
+SPO_STATE_DIR="\${SPO_STATE_DIR:-$STATE_DIR}"
 EOF
 chmod 644 "$SPO_DIR/spo.env"
 info "Pfade festgehalten: $SPO_DIR/spo.env"
@@ -453,6 +463,7 @@ Fertig. Nächste Schritte:
   $SPO_DIR/selftest.sh        # OCR-Toolchain prüfen
   $SPO_DIR/update_all.sh      # Lauf sofort anstoßen
   tail -n 40 $LOG_FILE
+  $SPO_DIR/loginwatch.sh --dry-run   # Fehlversuche am Formular ansehen
 
 Die Kalenderübersicht liegt offen unter  http://<host>/
 Eingetragen wird nur mit Anmeldung unter http://<host>/add_team.php
@@ -465,5 +476,5 @@ gesetzt (README: "Absicherung im öffentlichen Netz").
 HINT
 fi)
 
-Der Cron-Job wird separat eingerichtet (cron/crontab.example).
+Die Cron-Jobs werden separat eingerichtet (cron/crontab.example).
 EOF
