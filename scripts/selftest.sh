@@ -1,7 +1,8 @@
 #!/bin/bash
 #
 # selftest.sh — prüft die OCR-Toolchain, von der SpielplanOffline abhängt,
-# und die Saisonlogik aus saison.sh.
+# die Saisonlogik aus saison.sh und die Auswertung der Fehlversuche am
+# Eintrage-Formular aus loginwatch.sh.
 #
 # Fussball.de verschleiert Datum und Uhrzeit über einen eigenen Webfont: die
 # Ziffern stehen als Codepoints aus dem Unicode-Private-Use-Bereich im HTML,
@@ -32,7 +33,7 @@ ok()   { printf '  \033[32mOK\033[0m    %s\n' "$*"; }
 warn() { printf '  \033[33mHINWEIS\033[0m %s\n' "$*"; }
 bad()  { printf '  \033[31mFEHLER\033[0m %s\n' "$*"; fehler=1; }
 
-echo "fussballcal — Selbsttest (OCR-Toolchain und Saisonlogik)"
+echo "fussballcal — Selbsttest (OCR-Toolchain, Saisonlogik, Loginwatch)"
 echo "------------------------------------------------------------------"
 
 # ------------------------------------------------------------------
@@ -157,9 +158,78 @@ else
     unset -f pruef mach_ics status_fuer
 fi
 
-# Die folgenden Abschnitte brauchen ImageMagick. Die Saisonlogik oben lief
-# schon durch, deshalb hier mit dem bisherigen Ergebnis aussteigen statt hart
-# mit 1 — sonst verdeckte ein fehlendes ImageMagick, ob sie in Ordnung war.
+# ------------------------------------------------------------------
+# 3. Auswertung der Fehlversuche am Formular
+# ------------------------------------------------------------------
+# Ebenfalls ohne fussball.de und ohne OCR: geprüft wird gegen synthetische
+# nginx-Logzeilen. Der Punkt sind die beiden Verwechslungen, die den Bericht
+# wertlos machen würden — die 401-Zeile jedes ganz normalen Seitenaufrufs als
+# Angriff zu zählen, und Fehlversuche fremder vhosts derselben nginx-Instanz
+# mitzuzählen.
+echo
+echo "[3] Fehlversuche am Formular (scripts/loginwatch.sh)"
+LOGINWATCH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/loginwatch.sh"
+if [ ! -x "$LOGINWATCH" ]; then
+    warn "loginwatch.sh nicht gefunden neben $0 — Auswertung nicht geprüft."
+else
+    zeile() { # zeile <anzahl> <text-mit-client>
+        local i
+        for ((i = 0; i < $1; i++)); do
+            printf '2026/03/01 12:00:%02d [error] 1#1: *%d %s\n' $((i % 60)) "$i" "$2"
+        done
+    }
+    REQ='request: "GET /add_team.php HTTP/1.1", host: "x"'
+    {
+        zeile 30 "limiting requests, excess: 5.700 by zone \"fussballcal_login\", client: 203.0.113.7, server: _, $REQ"
+        zeile 14 "user \"admin\": password mismatch, client: 203.0.113.8, server: _, $REQ"
+        zeile  4 "user \"neu\" was not found in \"/etc/nginx/fussballcal.htpasswd\", client: 203.0.113.8, server: _, $REQ"
+        # Muss ignoriert werden: die 401-Antwort, mit der jeder Login beginnt.
+        zeile 99 "no user/password was provided for basic authentication, client: 198.51.100.1, server: _, $REQ"
+        # Muss ignoriert werden: anderer vhost, andere Rate-Limit-Zone.
+        zeile 99 'user "bob": password mismatch, client: 198.51.100.2, server: intern, request: "GET /webmail/ HTTP/1.1"'
+        zeile 99 'limiting requests, excess: 1.000 by zone "andere", client: 198.51.100.3, server: _, request: "GET /x HTTP/1.1"'
+    } >"$TMP/error.log"
+
+    bericht="$(LOGINWATCH_LOG="$TMP/error.log" LOGINWATCH_STATE="$TMP/loginwatch.state" \
+               "$LOGINWATCH" --dry-run 2>&1)" || true
+
+    zeilen_fuer() { printf '%s\n' "$bericht" | awk -v ip="$1" '$1 == ip { print $2, $3 }'; }
+    if [ "$(zeilen_fuer 203.0.113.7)" = "30 0" ]; then
+        ok "Blocks aus der Rate-Limit-Zone werden gezählt (30)"
+    else
+        bad "Blocks falsch gezählt: '$(zeilen_fuer 203.0.113.7)' statt '30 0'"
+    fi
+    if [ "$(zeilen_fuer 203.0.113.8)" = "0 18" ]; then
+        ok "Fehllogins werden gezählt (14 x falsches Passwort + 4 x unbekannter Benutzer)"
+    else
+        bad "Fehllogins falsch gezählt: '$(zeilen_fuer 203.0.113.8)' statt '0 18'"
+    fi
+    for ip in 198.51.100.1 198.51.100.2 198.51.100.3; do
+        case "$ip" in
+            *.1) was="die 401-Antwort jedes normalen Aufrufs" ;;
+            *.2) was="Fehllogins eines fremden vhosts" ;;
+            *)   was="eine fremde Rate-Limit-Zone" ;;
+        esac
+        if [ -z "$(zeilen_fuer "$ip")" ]; then
+            ok "ignoriert: $was"
+        else
+            bad "$was wird mitgezählt ($ip) — der Bericht meldete damit Fehlalarme."
+        fi
+    done
+    # Der Probelauf darf den Zustand nicht anfassen (sonst verschöbe ein
+    # Selbsttest die Leseposition des Cron-Jobs).
+    if [ -e "$TMP/loginwatch.state" ]; then
+        bad "--dry-run hat eine Zustandsdatei geschrieben — das verschiebt den Cron-Job."
+    else
+        ok "--dry-run lässt den Zustand des Cron-Jobs unberührt"
+    fi
+    unset -f zeile zeilen_fuer
+fi
+
+# Die folgenden Abschnitte brauchen ImageMagick. Saisonlogik und Auswertung
+# oben liefen schon durch, deshalb hier mit dem bisherigen Ergebnis aussteigen
+# statt hart mit 1 — sonst verdeckte ein fehlendes ImageMagick, ob sie in
+# Ordnung waren.
 [ -n "$CONVERT" ] || { echo; echo "Ohne ImageMagick sind keine weiteren Tests möglich."; exit "$fehler"; }
 
 PROBE="30.08.2026"
@@ -171,10 +241,10 @@ FONT=$(fc-list -f '%{file}\n' 2>/dev/null | grep -i '\.ttf$' | sort | head -1)
 [ -n "$FONT" ] || FONT=$(find /usr/share/fonts -name '*.ttf' 2>/dev/null | sort | head -1)
 
 # ------------------------------------------------------------------
-# 3. ImageMagick-Sicherheitsrichtlinie
+# 4. ImageMagick-Sicherheitsrichtlinie
 # ------------------------------------------------------------------
 echo
-echo "[3] ImageMagick-Sicherheitsrichtlinie (policy.xml)"
+echo "[4] ImageMagick-Sicherheitsrichtlinie (policy.xml)"
 if [ -z "$FONT" ]; then
     warn "kein TrueType-Font zum Testen gefunden — 'sudo apt install fonts-dejavu-core'"
 else
@@ -200,10 +270,10 @@ else
 fi
 
 # ------------------------------------------------------------------
-# 4. OCR-Durchstich
+# 5. OCR-Durchstich
 # ------------------------------------------------------------------
 echo
-echo "[4] OCR-Durchstich (Text -> Bild -> Text)"
+echo "[5] OCR-Durchstich (Text -> Bild -> Text)"
 if [ -s "$TMP/direkt.png" ] && command -v tesseract >/dev/null 2>&1; then
     tesseract "$TMP/direkt.png" "$TMP/ocr" -l deu --psm 6 >/dev/null 2>&1
     if [ -s "$TMP/ocr.txt" ] && grep -q "$PROBE" "$TMP/ocr.txt"; then
@@ -216,10 +286,10 @@ else
 fi
 
 # ------------------------------------------------------------------
-# 5. Lokale Patches im vendorten Tool
+# 6. Lokale Patches im vendorten Tool
 # ------------------------------------------------------------------
 echo
-echo "[5] Lokale Patches in SpielplanOffline"
+echo "[6] Lokale Patches in SpielplanOffline"
 TOOL_DIR="${SPO_TOOL_DIR:-/srv/spielplanoffline/SpielplanOffline}"
 if [ -d "$TOOL_DIR" ]; then
     if grep -q 'label:\\"\$(cat ' "$TOOL_DIR/runscript.awk" 2>/dev/null; then
