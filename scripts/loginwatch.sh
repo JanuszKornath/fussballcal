@@ -400,7 +400,9 @@ fi
 
 {
     echo "# Von loginwatch.sh erzeugt — Leseposition und Zwischenstand."
-    echo "# Löschen ist unschädlich: Der nächste Lauf beginnt dann von vorn."
+    echo "# Löschen ist unschädlich, hat aber eine Folge: Der nächste Lauf gilt"
+    echo "# dann wieder als Erstlauf, merkt sich nur die aktuelle Stelle im Log"
+    echo "# und meldet nichts. Alles davor bleibt ungemeldet."
     echo "pos $log_inode $neue_position"
     echo "report $letzter_bericht $eskalation"
     sed 's/^/ip /' "$TMP/acc_neu"

@@ -333,6 +333,44 @@ crontab-Zeile:
 */15 * * * * LOGINWATCH_BLOCKS=50 /srv/spielplanoffline/loginwatch.sh
 ```
 
+#### Nachsehen, ob es wirklich funktioniert
+
+Weil das Skript im Normalfall schweigt, ist ein stiller Defekt von stillem
+Normalbetrieb nicht zu unterscheiden. Ein Durchstich von Hand klärt das — die
+**Reihenfolge ist dabei entscheidend**:
+
+```bash
+# 1. Sicherstellen, dass der Cron-Job schon einmal gelaufen ist:
+sudo /srv/spielplanoffline/loginwatch.sh --status     # Leseposition muss gesetzt sein
+
+# 2. Fehlversuche erzeugen (11 Stück, eine über der Schwelle von 10).
+#    Das sleep ist Absicht: Ohne Pause würden die meisten Anfragen als 429
+#    gezählt statt als Fehllogin, und dann reißt keine der beiden Schwellen.
+for i in $(seq 11); do
+  curl -s -o /dev/null -u admin:absichtlichfalsch http://127.0.0.1/add_team.php
+  sleep 2
+done
+
+# 3. Sofort sichtbar machen, ohne dem Cron-Job etwas wegzunehmen:
+sudo /srv/spielplanoffline/loginwatch.sh --dry-run
+
+# 4. Den nächsten Cron-Lauf abwarten (<= 15 min) — er verschickt die Mail.
+```
+
+Die Zustandsdatei unter `/var/lib/fussballcal/` dabei **nicht** löschen: Ohne
+sie gilt der nächste Lauf als Erstlauf, merkt sich nur die aktuelle Stelle im
+Log und meldet nichts — die eben erzeugten Fehlversuche gälten dann als
+Vergangenheit. Steht eine Sendepause im Weg, reicht es, sie allein
+zurückzusetzen:
+
+```bash
+sudo sed -i 's/^report .*/report 0 0/' /var/lib/fussballcal/loginwatch.state
+```
+
+Bleibt die Mail aus, obwohl `--dry-run` den Bericht zeigt, liegt es am
+Mailweg, nicht an der Erkennung: `journalctl -u postfix` (bzw. der MTA der
+Wahl) zeigt nach einem ausgelösten Bericht, ob die Zustellung stattfand.
+
 Zwei Dinge werden bewusst **nicht** gezählt: die Zeile `no user/password was
 provided for basic authentication` — die entsteht bei jedem ganz normalen
 Seitenaufruf, bevor der Browser nach Zugangsdaten fragt —, und Fehlversuche
