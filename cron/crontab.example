@@ -3,6 +3,12 @@
 # muss VOR den Jobs stehen, sonst gilt sie für sie nicht.
 #MAILTO=admin@example.org
 
+# Cron verschickt die Ausgabe seiner Jobs ohne Angabe des Zeichensatzes. Das
+# Mailprogramm rät dann, und bei deutschen Texten rät es falsch: Aus "gehäufte
+# Fehlversuche" wird "gehÃ¤ufte Fehlversuche". Diese Zeile setzt den passenden
+# MIME-Header und muss wie MAILTO VOR den Jobs stehen.
+CONTENT_TYPE="text/plain; charset=UTF-8"
+
 # Alle 6 Stunden alle Kalender aktualisieren
 0 */6 * * * /srv/spielplanoffline/update_all.sh
 

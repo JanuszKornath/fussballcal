@@ -295,6 +295,22 @@ cron an root. Das Skript verschickt also selbst keine Mail, kennt keinen MTA
 und braucht kein `mail`-Binary; wohin die Meldung geht, entscheidet allein
 `MAILTO` in der crontab.
 
+Eine Zeile gehört dabei zwingend mit in die crontab, sonst kommt der Bericht
+mit zerlegten Umlauten an (`gehÃ¤ufte Fehlversuche`): Cron verschickt die
+Ausgabe ohne Angabe des Zeichensatzes, und das Mailprogramm rät dann auf
+Latin-1.
+
+```cron
+CONTENT_TYPE="text/plain; charset=UTF-8"
+```
+
+Wie `MAILTO` gilt sie nur für die Jobs **unterhalb** von ihr — beide Zeilen
+also an den Anfang, vor die Jobzeilen. Voraussetzung für die Zustellung ist
+außerdem ein MTA auf dem Rechner; ohne ihn erzeugt cron die Mail und verwirft
+sie mangels Zustellprogramm still. Ob root-Mail überhaupt ankommt, prüft man am
+schnellsten mit `journalctl -u postfix` (bzw. dem MTA der Wahl) nach einem
+ausgelösten Bericht.
+
 Ohne Schwellen wäre das unbrauchbar: Bei `rate=1r/s` erzeugt schon ein
 gemächlicher Angreifer mit zwei Anfragen pro Sekunde rund **86.000**
 abgewiesene Anfragen am Tag — pro Ereignis eine Mail, und `/var/mail/root`
