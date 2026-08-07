@@ -67,6 +67,20 @@ SAISON_VORSAISON_FRIST="${SPO_SAISON_VORSAISON_FRIST:-3 months}"
 # unterstützt, sie lässt sich nicht in Datumsgrenzen umrechnen. Ebenso
 # ausgeschlossen ist der Jahrhundertwechsel ("9900"): "20" davor zu setzen
 # ergäbe 2099/2000, und so alte Spielpläne hat fussball.de nicht.
+
+# Entfernt die laufende Spielnummer aus der DESCRIPTION einer erzeugten ICS.
+#
+# fussball2csv.awk nummeriert die Spiele in Ausgabereihenfolge durch. Kommt ein
+# Spiel dazu oder fällt eines weg (z.B. bei einer Verlegung), verschiebt sich
+# die Nummer aller folgenden Spiele — die DESCRIPTION ändert sich dann bei
+# Terminen, an denen sich sachlich nichts geändert hat, und Kalender-Apps
+# melden das als Update. "Nr. <Spielnummer>" von fussball.de identifiziert das
+# Spiel bereits eindeutig, die laufende Nummer trägt nichts bei.
+entferne_laufende_nummer() {
+    local f="$1"
+    sed -i -E 's/^(DESCRIPTION:.*), [0-9]+\. Spiel - (Nr\. )/\1, \2/' "$f"
+}
+
 saison_aus_url() {
     local url="$1" yy1 yy2
 

@@ -231,6 +231,7 @@ EOF
     elif ics_kaputt "$TMP_OUT/$slug.ics" "$slug"; then
         log "FEHLER: $slug.ics verworfen – bestehende Datei bleibt unverändert."
     else
+        entferne_laufende_nummer "$TMP_OUT/$slug.ics"
         ics_kennzahlen "$TMP_OUT/$slug.ics" "$HEUTE"
         saison_status "$HEUTE"
 
