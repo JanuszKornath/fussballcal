@@ -155,6 +155,14 @@ else
         fi
     fi
 
+    # -- Laufende Spielnummer aus der DESCRIPTION entfernen
+    printf 'DESCRIPTION:Kreisliga Musterkreis/Herren, 7. Spiel - Nr. 012345678, importiert mit SpielplanOffline(HF) \n' \
+        >"$TMP/nummer.ics"
+    entferne_laufende_nummer "$TMP/nummer.ics"
+    pruef "Laufende Spielnummer aus DESCRIPTION entfernt" \
+          "DESCRIPTION:Kreisliga Musterkreis/Herren, Nr. 012345678, importiert mit SpielplanOffline(HF) " \
+          "$(cat "$TMP/nummer.ics")"
+
     unset -f pruef mach_ics status_fuer
 fi
 
