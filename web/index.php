@@ -56,7 +56,16 @@ $teams = readTeams();
        Kalendern steht am Ende zusätzlich ein Termin mit demselben Hinweis,
        damit er auch in der Kalender-App auffällt.</p>
 
+    <?php // Rückverweis aufs Repo: Diese Seite ist für die meisten Besucher das
+          // Einzige, was sie von dem Projekt je sehen — hier gehört deshalb hin,
+          // woher der Dienst kommt (eigene Instanz aufsetzen, Fehler melden) und
+          // dass er nicht vom DFB stammt. Bewusst in der Fußzeile und nicht
+          // weiter oben: Wer nur abonnieren will, braucht davon nichts. ?>
     <p class="nav">Eine Mannschaft fehlt?
-       <a href="/add_team.php">Neue Mannschaft eintragen</a> (nur mit Zugangsdaten).</p>
+       <a href="/add_team.php">Neue Mannschaft eintragen</a> (nur mit Zugangsdaten).<br>
+       Dieser Dienst läuft mit
+       <a href="https://github.com/JanuszKornath/fussballcal">fussballcal</a>
+       (freie Software, Quelltext auf GitHub) und steht in keiner Verbindung zum
+       DFB. Die Spielplandaten stammen von fussball.de.</p>
 </body>
 </html>

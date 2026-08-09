@@ -915,7 +915,10 @@ Mitgliedsbeitrag erhebt.
 
 **Zu den Daten.** Die erzeugten Kalender enthalten Spielplandaten von
 fussball.de (DFB). Dieses Projekt steht in keiner Verbindung zum DFB und ist
-weder von ihm unterstützt noch autorisiert. Es holt dieselben Seiten, die auch
+weder von ihm unterstützt noch autorisiert. Dieser Hinweis steht zusammen mit
+einem Rückverweis auf dieses Repo auch in der Fußzeile der öffentlichen
+Startseite (`web/index.php`) — für Besucher, die nur diese Seite zu sehen
+bekommen. Es holt dieselben Seiten, die auch
 ein Browser lädt, alle sechs Stunden je eingetragener Mannschaft — der
 sinnvolle Rahmen ist der eigene Verein bzw. die eigenen Kinder, nicht das
 systematische Absaugen ganzer Verbandsdatenbestände. Wer den Dienst für viele
