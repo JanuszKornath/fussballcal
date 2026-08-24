@@ -206,6 +206,12 @@ fenster_zu_eng() {
 # einfach nicht mehr dazu. Die feste UID verhindert, dass Kalender-Apps ihn
 # doppelt anzeigen, falls sie zwei Fassungen sehen.
 #
+# Der Text sagt bewusst, dass das alte Abo bleiben *darf*: Bei
+# KEINE_SPIELE_MEHR_ERWARTET ändert sich die Datei nicht mehr, das Abo ist dann
+# das Archiv der Saison im Kalenderprogramm — passend dazu, dass die Website
+# den Kalender in diesem Zustand ins Archiv der Übersicht schiebt, statt ihn zu
+# entfernen (web/common.php, isArchived()).
+#
 # Erwartet LETZTES_SPIEL und SAISON. SUMMARY und DESCRIPTION stehen bewusst in
 # je einer langen Zeile statt nach RFC 5545 umgebrochen ("folding"): so macht es
 # fussball2csv.awk für alle anderen Termine auch, und die Kalender-Apps kommen
@@ -235,7 +241,7 @@ DTSTART;VALUE=DATE:$ab
 DTEND;VALUE=DATE:$bis
 TRANSP:TRANSPARENT
 SUMMARY:$saisontext ist beendet – neuen Kalender abonnieren
-DESCRIPTION:Für diese Mannschaft stehen keine weiteren Spiele an. fussball.de vergibt pro Saison eigene Links\, dieses Abo läuft also nicht von selbst mit der neuen Saison weiter: den Kalender der neuen Saison gibt es auf der Übersichtsseite dieses Dienstes\, das alte Abo kann danach in der Kalender-App entfernt werden.\n\nWerden doch noch Nachhol- oder Pokalspiele angesetzt\, verschwindet dieser Hinweis beim nächsten Abgleich von selbst.
+DESCRIPTION:Für diese Mannschaft stehen keine weiteren Spiele an. fussball.de vergibt pro Saison eigene Links\, dieses Abo läuft also nicht von selbst mit der neuen Saison weiter: den Kalender der neuen Saison gibt es auf der Übersichtsseite dieses Dienstes. Dieses Abo kann danach in der Kalender-App entfernt werden – nötig ist das nicht\, es behält den Spielplan dieser Saison und ändert sich nicht mehr.\n\nWerden doch noch Nachhol- oder Pokalspiele angesetzt\, verschwindet dieser Hinweis beim nächsten Abgleich von selbst.
 SEQUENCE:0
 END:VEVENT
 END:VCALENDAR

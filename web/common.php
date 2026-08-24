@@ -96,11 +96,71 @@ function seasonBadge(array $state): ?array
             . 'Kommen doch noch Nachhol- oder Pokalspiele, läuft dieser Kalender weiter.'],
         'KEINE_SPIELE_MEHR_ERWARTET' => ['beendet', $label . ' – beendet',
             'Das Saisonfenster ist abgelaufen, es sind keine weiteren Spiele zu '
-            . 'erwarten. Der Kalender bleibt als Archiv stehen.'],
+            . 'erwarten. Der Kalender steht im Archiv dieser Seite und ändert sich '
+            . 'nicht mehr; ein bestehendes Abo kann als Archiv der Saison stehen bleiben.'],
         'VORSAISON' => ['wartet', $label . ' – noch keine Spiele',
             'Der Spielplan ist auf fussball.de noch nicht veröffentlicht.'],
         default => null,
     };
+}
+
+/**
+ * Gehört dieser Kalender ins Archiv?
+ *
+ * Nur KEINE_SPIELE_MEHR_ERWARTET — und bewusst NICHT SAISONENDE_VERMUTLICH.
+ * Der Unterschied ist hier nicht kosmetisch: SAISONENDE_VERMUTLICH ist eine
+ * Heuristik, die zurückspringen kann, sobald doch noch Nachhol-, Relegations-
+ * oder Pokalspiele angesetzt werden (siehe scripts/saison.sh). Ein Kalender,
+ * der zwischen Übersicht und Archiv hin- und herwandert, wäre schlimmer als
+ * einer, der schlicht stehen bleibt: Wer ihn beim zweiten Besuch nicht mehr an
+ * seinem Platz findet, hält ihn für gelöscht.
+ *
+ * KEINE_SPIELE_MEHR_ERWARTET setzt dagegen voraus, dass das Saisonfenster
+ * abgelaufen ist, und das fällt nicht zurück — der Status ist damit endgültig.
+ *
+ * Ohne Saison in der URL wird er gar nicht erst vergeben: saison_status()
+ * erreicht den Zweig nur mit gesetztem FENSTER_ENDE. Vereinslinks laufen also
+ * weiter und bleiben in der Übersicht, wo sie hingehören.
+ *
+ * @param array<string, string> $state
+ */
+function isArchived(array $state): bool
+{
+    return ($state['status'] ?? '') === 'KEINE_SPIELE_MEHR_ERWARTET'
+        && strlen($state['saison'] ?? '') === 4;
+}
+
+/**
+ * Teilt die Kalenderliste in laufende und archivierte Einträge.
+ *
+ * Der laufende Teil behält die Reihenfolge aus readTeams() (nach Kurznamen).
+ * Das Archiv wird nach Saison absteigend sortiert: die zuletzt beendete Saison
+ * steht oben, denn nach der wird am ehesten noch gesucht. Innerhalb einer
+ * Saison entscheidet wieder der Kurzname.
+ *
+ * @param list<array{slug: string, url: string, exists: bool, mtime: ?int,
+ *                   state: array<string, string>}> $teams
+ * @return array{0: list<array<string, mixed>>, 1: list<array<string, mixed>>}
+ */
+function splitArchived(array $teams): array
+{
+    $current = [];
+    $archived = [];
+
+    foreach ($teams as $team) {
+        if (isArchived($team['state'])) {
+            $archived[] = $team;
+        } else {
+            $current[] = $team;
+        }
+    }
+
+    usort($archived, static function (array $a, array $b): int {
+        $bySeason = strcmp($b['state']['saison'] ?? '', $a['state']['saison'] ?? '');
+        return $bySeason !== 0 ? $bySeason : strcmp($a['slug'], $b['slug']);
+    });
+
+    return [$current, $archived];
 }
 
 /**
@@ -364,6 +424,10 @@ function pageStyles(): string
         .badge.endet   { background: #fff4e5; color: #6b4500; border-color: #e6cfa8; }
         .badge.beendet { background: #f2f2f2; color: #444;    border-color: #ddd; }
         .badge.wartet  { background: #eaf1fb; color: #1c3f6e; border-color: #bcd0ea; }
+        details.archiv { margin-top: 1.5rem; }
+        details.archiv > summary { cursor: pointer; color: #444; font-size: 0.9rem;
+                                   padding: 0.4rem 0; }
+        details.archiv > ul.calendars { margin-top: 0.5rem; }
         .nav { margin-top: 2.5rem; border-top: 1px solid #ddd; padding-top: 1rem;
                color: #444; font-size: 0.9rem; }
         form.delete { display: inline; }
@@ -376,12 +440,80 @@ CSS;
 }
 
 /**
+ * Ein Eintrag der Kalenderliste.
+ *
+ * Ausgelagert, weil ihn zwei Listen brauchen: die Übersicht der laufenden
+ * Kalender und das Archiv darunter. Beide sehen gleich aus — der Unterschied
+ * liegt allein darin, wo sie stehen.
+ *
+ * @param array{slug: string, url: string, exists: bool, mtime: ?int,
+ *              state: array<string, string>} $team
+ */
+function renderCalendarEntry(array $team, string $host, ?string $csrf): void
+{
+    $webcal = 'webcal://' . $host . '/ics/' . $team['slug'] . '.ics';
+    $https  = 'https://' . $host . '/ics/' . $team['slug'] . '.ics';
+    $badge  = seasonBadge($team['state']);
+    ?>
+    <li>
+        <span class="slug"><?= htmlspecialchars($team['slug']) ?></span>
+        <?php if ($badge !== null): ?>
+            <span class="badge <?= $badge[0] ?>" title="<?= htmlspecialchars($badge[2]) ?>"><?= htmlspecialchars($badge[1]) ?></span>
+        <?php endif; ?>
+        &mdash; <a href="<?= htmlspecialchars($webcal) ?>">Abonnieren</a>
+        <?php if ($csrf !== null): ?>
+            <?php // Löschen ist destruktiv: nur per POST, mit CSRF-Token und
+                  // einer Rückfrage im Browser. ?>
+            <form method="post" action="/add_team.php" class="delete"
+                  onsubmit="return confirm('Kalender &quot;<?= htmlspecialchars($team['slug'], ENT_QUOTES) ?>&quot; wirklich löschen?');">
+                <input type="hidden" name="action" value="delete">
+                <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrf) ?>">
+                <input type="hidden" name="slug" value="<?= htmlspecialchars($team['slug']) ?>">
+                <button type="submit">Löschen</button>
+            </form>
+        <?php endif; ?>
+        <br>
+        <code><?= htmlspecialchars($https) ?></code><br>
+        <span class="status">
+            <?php if ($team['mtime'] !== null): ?>
+                zuletzt aktualisiert: <?= htmlspecialchars(date('d.m.Y H:i', $team['mtime'])) ?>
+            <?php elseif (($team['state']['status'] ?? '') === 'KEINE_SPIELE_MEHR_ERWARTET'): ?>
+                <?php // Statusdatei ohne ICS: die Saison war schon vorbei, als der
+                      // Eintrag angelegt wurde. Ein Kalender entsteht hier nicht mehr. ?>
+                kein Kalender &ndash; für diese Saison liefert fussball.de keine Spiele
+            <?php else: ?>
+                wird beim nächsten Update erzeugt
+            <?php endif; ?>
+            <?php // Nur fussball.de verlinken – teams.txt kann von Hand
+                  // gepflegt werden, ein "javascript:"-Link wäre sonst XSS. ?>
+            <?php if (str_starts_with($team['url'], 'https://www.fussball.de/')): ?>
+                &middot; <a href="<?= htmlspecialchars($team['url']) ?>">Quelle auf fussball.de</a>
+            <?php endif; ?>
+        </span>
+    </li>
+    <?php
+}
+
+/**
  * Liste aller Kalender mit Abo-Link und Stand der letzten Aktualisierung.
+ *
+ * Kalender endgültig abgeschlossener Saisons stehen darunter in einem
+ * zugeklappten Archiv (siehe isArchived()). Grund ist der Saisonwechsel: Zur
+ * neuen Saison kommt pro Mannschaft ein neuer Eintrag dazu, der alte bleibt
+ * stehen — so empfiehlt es der README, und so bleibt der abonnierte Spielplan
+ * erhalten. Ohne Archiv wüchse die Übersicht damit jede Saison um die volle
+ * Mannschaftszahl, ausgerechnet auf der Seite, auf der jemand ein Abo *sucht*.
+ *
+ * Bewusst <details> statt JavaScript: die Seite kommt sonst auch ohne aus, und
+ * der Browser kann das von sich aus. Die Zahl gehört in die Zusammenfassung —
+ * sonst sucht jemand einen Kalender, der da ist, und findet ihn nicht.
  *
  * Mit $csrf bekommt jeder Eintrag zusätzlich einen Löschen-Knopf. Das Token
  * ist bewusst der Schalter dafür: Nur add_team.php hat eins (die Seite hinter
  * der Anmeldung, die den POST auch verarbeitet), die öffentliche index.php
- * ruft ohne auf und zeigt damit gar keine Knöpfe.
+ * ruft ohne auf und zeigt damit gar keine Knöpfe. Das Archiv ist auch dort
+ * zugeklappt, aber vollständig — die Löschen-Knöpfe der alten Saisons sind
+ * genau das, was beim Aufräumen gebraucht wird.
  *
  * @param list<array{slug: string, url: string, exists: bool, mtime: ?int,
  *                   state: array<string, string>}> $teams
@@ -392,6 +524,8 @@ function renderCalendars(array $teams, string $host, ?string $csrf = null): void
         echo '<p class="hint">Noch keine Teams eingetragen.</p>';
         return;
     }
+
+    [$current, $archived] = splitArchived($teams);
     ?>
     <p class="hint">Auf <em>Abonnieren</em> klicken (öffnet die Kalender-App), oder die
        Adresse darunter kopieren und im Kalenderprogramm als Abo-URL einfügen.
@@ -404,50 +538,29 @@ function renderCalendars(array $teams, string $host, ?string $csrf = null): void
            beschreibbar — beim Löschen bleibt die <code>.ics</code>-Datei liegen.
            <code>scripts/deploy.sh</code> erneut ausführen.</p>
     <?php endif; ?>
-    <ul class="calendars">
-    <?php foreach ($teams as $team): ?>
-        <?php
-            $webcal = 'webcal://' . $host . '/ics/' . $team['slug'] . '.ics';
-            $https  = 'https://' . $host . '/ics/' . $team['slug'] . '.ics';
-            $badge  = seasonBadge($team['state']);
-        ?>
-        <li>
-            <span class="slug"><?= htmlspecialchars($team['slug']) ?></span>
-            <?php if ($badge !== null): ?>
-                <span class="badge <?= $badge[0] ?>" title="<?= htmlspecialchars($badge[2]) ?>"><?= htmlspecialchars($badge[1]) ?></span>
-            <?php endif; ?>
-            &mdash; <a href="<?= htmlspecialchars($webcal) ?>">Abonnieren</a>
-            <?php if ($csrf !== null): ?>
-                <?php // Löschen ist destruktiv: nur per POST, mit CSRF-Token und
-                      // einer Rückfrage im Browser. ?>
-                <form method="post" action="/add_team.php" class="delete"
-                      onsubmit="return confirm('Kalender &quot;<?= htmlspecialchars($team['slug'], ENT_QUOTES) ?>&quot; wirklich löschen?');">
-                    <input type="hidden" name="action" value="delete">
-                    <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrf) ?>">
-                    <input type="hidden" name="slug" value="<?= htmlspecialchars($team['slug']) ?>">
-                    <button type="submit">Löschen</button>
-                </form>
-            <?php endif; ?>
-            <br>
-            <code><?= htmlspecialchars($https) ?></code><br>
-            <span class="status">
-                <?php if ($team['mtime'] !== null): ?>
-                    zuletzt aktualisiert: <?= htmlspecialchars(date('d.m.Y H:i', $team['mtime'])) ?>
-                <?php elseif (($team['state']['status'] ?? '') === 'KEINE_SPIELE_MEHR_ERWARTET'): ?>
-                    <?php // Statusdatei ohne ICS: die Saison war schon vorbei, als der
-                          // Eintrag angelegt wurde. Ein Kalender entsteht hier nicht mehr. ?>
-                    kein Kalender &ndash; für diese Saison liefert fussball.de keine Spiele
-                <?php else: ?>
-                    wird beim nächsten Update erzeugt
-                <?php endif; ?>
-                <?php // Nur fussball.de verlinken – teams.txt kann von Hand
-                      // gepflegt werden, ein "javascript:"-Link wäre sonst XSS. ?>
-                <?php if (str_starts_with($team['url'], 'https://www.fussball.de/')): ?>
-                    &middot; <a href="<?= htmlspecialchars($team['url']) ?>">Quelle auf fussball.de</a>
-                <?php endif; ?>
-            </span>
-        </li>
-    <?php endforeach; ?>
-    </ul>
+    <?php if ($current === []): ?>
+        <p class="hint">Zurzeit läuft kein Kalender &mdash; alle eingetragenen Saisons
+           sind abgeschlossen und stehen im Archiv.</p>
+    <?php else: ?>
+        <ul class="calendars">
+        <?php foreach ($current as $team): ?>
+            <?php renderCalendarEntry($team, $host, $csrf); ?>
+        <?php endforeach; ?>
+        </ul>
+    <?php endif; ?>
+    <?php if ($archived !== []): ?>
+        <details class="archiv">
+            <summary>Archiv: <?= count($archived) ?> beendete<?= count($archived) === 1 ? 'r' : '' ?> Kalender</summary>
+            <p class="hint">Für diese Mannschaften ist die Saison abgeschlossen: das
+               Saisonfenster ist abgelaufen, es kommen keine Spiele mehr dazu. Die
+               Adressen bleiben gültig und die Kalender ändern sich nicht mehr &mdash;
+               ein bestehendes Abo kann als Archiv der Saison stehen bleiben.</p>
+            <ul class="calendars">
+            <?php foreach ($archived as $team): ?>
+                <?php renderCalendarEntry($team, $host, $csrf); ?>
+            <?php endforeach; ?>
+            </ul>
+        </details>
+    <?php endif; ?>
     <?php
 }

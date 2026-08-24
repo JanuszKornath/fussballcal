@@ -134,11 +134,18 @@ $teams = readTeams();
        Adresse abonnieren: ein bestehendes Abo wechselt nicht von selbst auf die
        neue Saison. Ein <em>Vereins</em>link ist nicht saisongebunden und läuft
        von selbst weiter.</p>
+    <p class="hint">Stehenlassen kostet keinen Platz in der Übersicht: Sobald das
+       Saisonfenster abgelaufen ist, rutscht der alte Eintrag unten in das
+       zugeklappte <em>Archiv</em> — auf beiden Seiten, hier mitsamt seinem
+       Löschen-Knopf.</p>
     <p class="hint">Sobald für eine Mannschaft kein Spiel mehr ansteht, wird der
        Kalender in der Übersicht als <em>vermutlich beendet</em> markiert und
        enthält einen entsprechenden Termin. Mit Gewissheit lässt sich das
        Saisonende nicht bestimmen — fussball.de nennt keines, und Nachhol- oder
-       Pokalspiele können noch folgen. Der Kalender läuft dann einfach weiter.</p>
+       Pokalspiele können noch folgen. Der Kalender läuft dann einfach weiter.
+       Genau deshalb wandert er in diesem Zustand noch <em>nicht</em> ins Archiv:
+       dorthin kommt er erst, wenn zusätzlich das Saisonfenster abgelaufen ist
+       und damit feststeht, dass nichts mehr nachkommt.</p>
 
     <form method="post">
         <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrf) ?>">
