@@ -21,6 +21,33 @@ anderen externen Quellen nach — alles Nötige ist Teil dieses Repos
 > per Knopf, auf dem Server per Editor. Details im Abschnitt
 > [Benutzung](#benutzung).
 
+## Inhalt
+
+- [Aufbau](#aufbau) — was in diesem Repo liegt
+- [Funktionsweise](#funktionsweise) — wie aus fussball.de eine `.ics` wird
+- [Installation](#installation) — Pakete, Rollout, was `deploy.sh` anlegt
+  - [Änderungen aus dem Repo nachziehen](#änderungen-aus-dem-repo-nachziehen)
+  - [TLS: ein Reverse Proxy gehört davor](#tls-ein-reverse-proxy-gehört-davor)
+  - [Zugang zum Formular](#zugang-zum-formular) — Basic Auth einrichten
+  - [Wenn jemand am Formular klopft](#wenn-jemand-am-formular-klopft) — Fehlversuche melden
+    - [Nachsehen, ob es wirklich funktioniert](#nachsehen-ob-es-wirklich-funktioniert)
+  - [Absicherung im öffentlichen Netz](#absicherung-im-öffentlichen-netz)
+  - [Fehlersuche: es erscheint die nginx-Welcome-Page](#fehlersuche-es-erscheint-die-nginx-welcome-page)
+- [Benutzung](#benutzung) — der Alltag mit dem Dienst
+  - [1. Den fussball.de-Link heraussuchen](#1-den-fussballde-link-heraussuchen)
+  - [2. Den Link eintragen](#2-den-link-eintragen) — per Formular oder in `teams.txt`
+  - [3. Den Kalenderlink abrufen](#3-den-kalenderlink-abrufen) — abonnieren per `webcal://`
+  - [4. Einen Kalender wieder löschen](#4-einen-kalender-wieder-löschen)
+  - [5. Saisonwechsel](#5-saisonwechsel) — Links einmal im Jahr erneuern
+  - [Woran das Tool das Saisonende erkennt — und woran nicht](#woran-das-tool-das-saisonende-erkennt--und-woran-nicht)
+    - [Das Archiv auf der Website](#das-archiv-auf-der-website)
+    - [Das Abfragefenster](#das-abfragefenster)
+- [Fehlersuche: keine Datums-/Zeitangaben im Kalender](#fehlersuche-keine-datums-zeitangaben-im-kalender) — die OCR-Kette prüfen
+- [sudo-Mails: „a password is required"](#sudo-mails-a-password-is-required) — Cron ohne TTY
+- [Was erfahrungsgemäß bricht](#was-erfahrungsgemäß-bricht)
+- [Mitwirken](#mitwirken)
+- [Lizenz und Dank](#lizenz-und-dank)
+
 ## Aufbau
 
 ```
