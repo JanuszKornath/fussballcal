@@ -637,14 +637,18 @@ Zum Saisonwechsel deshalb pro Mannschaft:
 2. Ihn unter einem eigenen Kurznamen eintragen, z.B. `tsv_musterstadt_1_2627`
    (Schritt 2). Der alte Eintrag kann stehen bleiben — sein Kalender ist dann
    das Archiv der vergangenen Saison — oder nach Schritt 4 gelöscht werden.
+   Stehenlassen kostet keinen Platz in der Übersicht: Sobald sein Saisonfenster
+   abgelaufen ist, rutscht er dort ins zugeklappte
+   [Archiv](#das-archiv-auf-der-website).
 3. Die neue Adresse an die Abonnenten weitergeben bzw. sie auf die Startseite
    verweisen, wo der neue Kalender automatisch auftaucht.
 
 **Bestehende Abos wechseln nicht von selbst auf die neue Saison**: Wer den
 Kalender der alten Saison abonniert hat, muss den neuen Link zusätzlich
-abonnieren und das alte Abo in seiner Kalender-App entfernen. Beide
-Webseiten weisen darauf hin — die Startseite für die Abonnenten, das
-Formular für die, die Links eintragen.
+abonnieren. Das alte Abo kann er in seiner Kalender-App entfernen, muss es aber
+nicht — es ändert sich nicht mehr und behält den Spielplan der vergangenen
+Saison, ist dort also ebenfalls ein Archiv. Beide Webseiten weisen darauf hin —
+die Startseite für die Abonnenten, das Formular für die, die Links eintragen.
 
 Wer stattdessen den Slug behalten will, kann in `teams.txt` auch nur die URL
 der bestehenden Zeile auf die neue Saison umschreiben. Dann bleibt die Abo-URL
@@ -690,6 +694,45 @@ erzeugt.
 Eine leere Ausgabe wird **nie veröffentlicht**, aus keinem Grund. Die bestehende
 Datei ist der Spielplan der Saison; sie gegen einen leeren Kalender zu tauschen
 nähme den Abonnenten auch noch das Archiv.
+
+#### Das Archiv auf der Website
+
+Beim Saisonwechsel kommt pro Mannschaft ein Eintrag dazu, der alte bleibt stehen
+(siehe [Saisonwechsel](#5-saisonwechsel)). Ohne Gegenmaßnahme wüchse die
+Übersicht damit jede Saison um die volle Mannschaftszahl — ausgerechnet auf der
+Seite, auf der jemand ein Abo *sucht*.
+
+Deshalb steht unter der Liste ein zugeklapptes **Archiv** („Archiv: 12 beendete
+Kalender"), gebaut aus `<details>`/`<summary>` — kein JavaScript, der Browser
+kann das von sich aus. Hinein wandert ein Kalender genau dann, wenn sein Status
+`KEINE_SPIELE_MEHR_ERWARTET` ist, und bewusst **nicht** schon bei
+`SAISONENDE_VERMUTLICH`:
+
+| | `SAISONENDE_VERMUTLICH` | `KEINE_SPIELE_MEHR_ERWARTET` |
+|---|---|---|
+| Grundlage | kein Spiel mehr offen (Heuristik) | zusätzlich: Saisonfenster abgelaufen |
+| kann zurückspringen | ja — Nachhol-, Relegations- oder Pokalspiele | nein |
+| steht | in der Übersicht | im Archiv |
+
+Ein Kalender, der zwischen Übersicht und Archiv hin- und herwandert, wäre
+schlimmer als einer, der schlicht stehen bleibt: Wer ihn beim zweiten Besuch
+nicht mehr an seinem Platz findet, hält ihn für gelöscht.
+
+Zeitlich passt das zum Wechsel: Das Fenster endet per Vorgabe am 31. Juli, der
+Kalender der neuen Saison taucht ab dem 1. Juli als `VORSAISON` auf. Alt und neu
+stehen also ein paar Wochen nebeneinander — genau in der Zeit, in der die
+Abonnenten wechseln müssen. Der alte rutscht erst weg, wenn der neue schon da
+ist.
+
+Vereinslinks erreichen den Status gar nicht — ohne Saison in der URL gibt es kein
+Fensterende — und bleiben deshalb dauerhaft in der Übersicht, wo sie hingehören.
+
+Das Archiv ist eine **Anzeigefrage, keine Betriebsfrage**: Die Adressen bleiben
+unverändert gültig, die Dateien werden weiter ausgeliefert, und der Cron-Job
+fragt auch archivierte Einträge bei jedem Lauf ab. Ein bestehendes Abo kann
+deshalb als Archiv der Saison in der Kalender-App stehen bleiben. Auf
+`add_team.php` ist das Archiv derselbe Block, nur mitsamt der Löschen-Knöpfe —
+zum Aufräumen alter Saisons.
 
 #### Das Abfragefenster
 

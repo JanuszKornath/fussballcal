@@ -44,10 +44,12 @@ $teams = readTeams();
        Saison, ein Abo enthält deshalb nur die Spiele der Saison, für die es
        eingetragen wurde. Zur neuen Saison erscheint hier ein neuer Kalender mit
        neuer Adresse — die muss dann <em>zusätzlich abonniert</em> werden. Das
-       alte Abo aktualisiert sich nicht mehr und kann in der Kalender-App
-       entfernt werden. Kalender, die aus einem Vereinslink stammen, sind davon
-       ausgenommen; sie sind oben als <em>nicht saisongebunden</em>
-       gekennzeichnet und laufen von selbst weiter.</p>
+       alte Abo aktualisiert sich nicht mehr; entfernen kann man es in der
+       Kalender-App, nötig ist es aber nicht: Der Spielplan der vergangenen
+       Saison bleibt darin stehen, und die Adresse liefert ihn weiter aus.
+       Kalender, die aus einem Vereinslink stammen, sind davon ausgenommen; sie
+       sind oben als <em>nicht saisongebunden</em> gekennzeichnet und laufen von
+       selbst weiter.</p>
 
     <p class="hint">Das Abzeichen hinter jedem Kalender sagt, woran er ist.
        <em>Vermutlich beendet</em> heißt: für diese Mannschaft steht kein Spiel
@@ -55,6 +57,14 @@ $teams = readTeams();
        und Nachhol- oder Pokalspiele können noch dazukommen. In beendeten
        Kalendern steht am Ende zusätzlich ein Termin mit demselben Hinweis,
        damit er auch in der Kalender-App auffällt.</p>
+
+    <p class="hint">Ist eine Saison endgültig abgeschlossen — kein Spiel mehr
+       offen und das Saisonfenster abgelaufen —, wandert ihr Kalender in das
+       <em>Archiv</em> unter der Liste. Dort steht er weiter mit derselben
+       Adresse und ändert sich nicht mehr; er nimmt der Übersicht nur keinen
+       Platz mehr weg. Solange ein Kalender erst <em>vermutlich beendet</em>
+       ist, bleibt er oben stehen: Kommt doch noch ein Spiel dazu, geht es dort
+       weiter.</p>
 
     <?php // Rückverweis aufs Repo: Diese Seite ist für die meisten Besucher das
           // Einzige, was sie von dem Projekt je sehen — hier gehört deshalb hin,
