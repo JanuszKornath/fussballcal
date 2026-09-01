@@ -9,8 +9,10 @@
 name: CI
 
 on:
+  # Nur main und Pull Requests: bei 'branches: [**]' liefe jeder Push auf einen
+  # Branch mit offenem PR zweimal durch dieselben Jobs.
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
