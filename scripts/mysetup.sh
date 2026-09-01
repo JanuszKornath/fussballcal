@@ -6,6 +6,11 @@
 #
 # Diese Datei nach /srv/spielplanoffline/SpielplanOffline/mysetup.sh kopieren.
 
+# Diese Datei hat bewusst keinen Shebang und wird nur gesourct; die Variablen
+# wertet SpielplanOffline.sh aus, deshalb sieht ShellCheck sie als ungenutzt.
+# shellcheck shell=bash
+# shellcheck disable=SC2034,SC2209
+
 #------------------------------------------------------------------------
 # Arbeits- und Ausgabeverzeichnisse
 # HOMEDIR sollte zu ROOTDIR ($HOME) passen, das SpielplanOffline.sh an das

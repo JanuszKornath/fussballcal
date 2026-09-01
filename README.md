@@ -46,12 +46,16 @@ anderen externen Quellen nach — alles Nötige ist Teil dieses Repos
 - [sudo-Mails: „a password is required"](#sudo-mails-a-password-is-required) — Cron ohne TTY
 - [Was erfahrungsgemäß bricht](#was-erfahrungsgemäß-bricht)
 - [Mitwirken](#mitwirken)
+  - [Was die CI prüft](#was-die-ci-prüft)
 - [Lizenz und Dank](#lizenz-und-dank)
 
 ## Aufbau
 
 ```
 fussballcal/
+├── .github/
+│   └── workflows/
+│       └── ci.yml          # GitHub Actions: PHP-Syntax, ShellCheck, Selbsttest
 ├── vendor/
 │   └── SpielplanOffline/   # das Tool selbst, fest eingecheckt (kein Download!)
 ├── scripts/
@@ -955,6 +959,32 @@ Nötigste beschränkt und werden im Quelltext mit `LOKALER PATCH (fussballcal)`
 markiert, damit `scripts/selftest.sh` sie findet und ein Versionsupdate
 nachvollziehbar bleibt. Und wer am Rollout schraubt, prüft bitte, dass
 `deploy.sh` idempotent bleibt.
+
+### Was die CI prüft
+
+Bei jedem Push und jedem Pull Request läuft `.github/workflows/ci.yml`. Das
+Projekt hat weder Composer noch ein Framework, entsprechend schlank ist die
+Prüfung — sie testet das, was es hier tatsächlich zu testen gibt:
+
+| Job | Was er macht |
+| --- | --- |
+| **PHP-Syntax** | `php -l` über `web/*.php`, einmal unter PHP 8.2 und einmal unter 8.3 — die Versionen von Debian 12 und Debian 13/Ubuntu 24.04 |
+| **Shell-Syntax und ShellCheck** | `bash -n` und `shellcheck -x` über `scripts/*.sh`; `vendor/SpielplanOffline/` bleibt außen vor, das ist Fremdcode |
+| **Selbsttest** | installiert gawk, ImageMagick und tesseract und fährt `scripts/selftest.sh` — also die Saisonlogik, die Auswertung der Fehlversuche und den OCR-Durchstich gegen synthetische Daten |
+
+Der Selbsttest zeigt dabei per `SPO_TOOL_DIR` auf `vendor/SpielplanOffline/`
+statt auf einen installierten Rollout. Damit fällt in der CI auf, wenn ein
+Versionsupdate des vendorten Tools die lokalen Patches überschreibt — sonst
+bemerkt man das erst am fertigen Kalender, in dem dann wieder jedes Spiel auf
+`0.0.0` steht.
+
+Beides lässt sich vor dem Push auch lokal fahren:
+
+```bash
+php -l web/common.php
+shellcheck -x scripts/*.sh
+SPO_TOOL_DIR="$PWD/vendor/SpielplanOffline" ./scripts/selftest.sh
+```
 
 ## Lizenz und Dank
 

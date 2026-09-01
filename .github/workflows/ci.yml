@@ -1,0 +1,97 @@
+# CI für fussballcal.
+#
+# Das Projekt kommt ohne Composer, Datenbank und Framework aus: der Webteil
+# sind drei PHP-Dateien, der Rest sind Bash-Skripte und das vendorte
+# SpielplanOffline. Entsprechend prüft die CI genau das — Syntax auf beiden
+# Seiten und den vorhandenen Selbsttest, der die Saisonlogik, die Auswertung
+# der Fehlversuche und den OCR-Durchstich gegen synthetische Daten fährt.
+
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  php:
+    name: PHP-Syntax (${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Debian 12 liefert PHP 8.2, Debian 13 und Ubuntu 24.04 liefern 8.3 —
+        # das sind die Versionen, unter denen der Rollout laut README läuft.
+        php: ['8.2', '8.3']
+    # Kein Alpine: die Actions bringen ihr Node gegen glibc gelinkt mit.
+    container: php:${{ matrix.php }}-cli
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: php -l über den Webteil
+        run: |
+          set -eu
+          for datei in web/*.php; do
+              php -l "$datei"
+          done
+
+  shell:
+    name: Shell-Syntax und ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ShellCheck bereitstellen
+        run: |
+          set -eu
+          command -v shellcheck >/dev/null 2>&1 || {
+              sudo apt-get update
+              sudo apt-get install -y shellcheck
+          }
+          shellcheck --version
+
+      - name: bash -n über die eigenen Skripte
+        run: |
+          set -eu
+          # mysetup.sh wird nur gesourct und hat deshalb keinen Shebang.
+          for datei in scripts/*.sh; do
+              bash -n "$datei"
+              echo "OK  $datei"
+          done
+
+      - name: ShellCheck über die eigenen Skripte
+        env:
+          # Ohne UTF-8-Locale bricht ShellCheck an den Umlauten in den
+          # Kommentaren ab ("commitBuffer: invalid argument").
+          LC_ALL: C.UTF-8
+        # vendor/SpielplanOffline bleibt außen vor: das ist Fremdcode, den wir
+        # nur patchen, nicht pflegen.
+        run: shellcheck -x scripts/*.sh
+
+  selftest:
+    name: Selbsttest (Saisonlogik, Loginwatch, OCR)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain installieren
+        run: |
+          set -eu
+          sudo apt-get update
+          sudo apt-get install -y \
+              gawk wget perl imagemagick \
+              tesseract-ocr tesseract-ocr-deu \
+              fontconfig fonts-dejavu-core
+
+      - name: scripts/selftest.sh
+        env:
+          # Ohne installierten Rollout gibt es keine spo.env; der Selbsttest
+          # prüft die Patches deshalb direkt am vendorten Stand im Repo. Damit
+          # fällt auf, wenn ein Update von vendor/SpielplanOffline die Patches
+          # überschreibt — dann stünden alle Spiele wieder auf "0.0.0".
+          SPO_ENV: /nonexistent
+        run: SPO_TOOL_DIR="$GITHUB_WORKSPACE/vendor/SpielplanOffline" ./scripts/selftest.sh
