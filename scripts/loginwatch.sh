@@ -60,6 +60,7 @@ SKRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # (spo.env). Umgebungsvariablen gehen vor.
 SPO_ENV="${SPO_ENV:-$SKRIPT_DIR/spo.env}"
 if [ -r "$SPO_ENV" ]; then
+    # shellcheck source=/dev/null  # Pfad steht erst zur Laufzeit fest
     . "$SPO_ENV"
 fi
 

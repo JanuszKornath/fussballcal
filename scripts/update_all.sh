@@ -23,6 +23,7 @@ set -euo pipefail
 # Rollout. Bereits gesetzte Umgebungsvariablen behalten Vorrang.
 SPO_ENV="${SPO_ENV:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/spo.env}"
 if [ -r "$SPO_ENV" ]; then
+    # shellcheck source=/dev/null  # Pfad steht erst zur Laufzeit fest
     . "$SPO_ENV"
 fi
 
@@ -58,6 +59,7 @@ if [ ! -r "$SAISON_LIB" ]; then
     echo "$(date -Is) saison.sh nicht gefunden neben $0, breche ab." >&2
     exit 1
 fi
+# shellcheck source=/dev/null  # Pfad steht erst zur Laufzeit fest
 . "$SAISON_LIB"
 
 HEUTE="$(date +%Y%m%d)"
@@ -114,7 +116,11 @@ ics_kaputt() {
 # Schreibt die Statusdatei neben die ICS. Bewusst flach und menschenlesbar –
 # passend zum Rest des Projekts, das ohne Datenbank auskommt.
 schreibe_status() {
-    local slug="$1" ziel="$OUTDIR/$slug.state"
+    # Zwei getrennte local-Zeilen: in einem gemeinsamen "local a=… b=$a"
+    # ist $a beim Auswerten von b noch leer — alle Teams landeten sonst in
+    # derselben Datei "$OUTDIR/.state", und die Webseite fand keinen Status.
+    local slug="$1"
+    local ziel="$OUTDIR/$slug.state"
 
     cat >"$ziel.new" <<EOF
 # Von update_all.sh erzeugt – nicht von Hand pflegen.

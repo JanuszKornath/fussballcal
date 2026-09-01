@@ -18,6 +18,10 @@
 # Deshalb behauptet hier kein Status "Saison vorbei" — nur "vermutlich
 # beendet" und "keine weiteren Spiele zu erwarten".
 
+# Die Variablen dieser Datei (SAISON, SAISON_NOMINALENDE, STATUS, FENSTER_*, …)
+# liest erst der sourcende Aufrufer — ShellCheck sieht das nicht.
+# shellcheck disable=SC2034
+
 # Wie weit das Saisonfenster über die nominelle Spielzeit (1.7. bis 30.6.)
 # hinausreicht.
 #

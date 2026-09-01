@@ -25,6 +25,7 @@ set -uo pipefail
 # Standardpfad statt der tatsächlichen Installation. Umgebungsvariablen gehen vor.
 SPO_ENV="${SPO_ENV:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/spo.env}"
 if [ -r "$SPO_ENV" ]; then
+    # shellcheck source=/dev/null  # Pfad steht erst zur Laufzeit fest
     . "$SPO_ENV"
 fi
 
@@ -84,6 +85,7 @@ SAISON_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/saison.sh"
 if [ ! -r "$SAISON_LIB" ]; then
     bad "saison.sh nicht gefunden neben $0 — update_all.sh bricht damit ab."
 else
+    # shellcheck source=/dev/null  # Pfad steht erst zur Laufzeit fest
     . "$SAISON_LIB"
 
     pruef() { # pruef <beschreibung> <erwartet> <ist>
@@ -300,6 +302,7 @@ echo
 echo "[6] Lokale Patches in SpielplanOffline"
 TOOL_DIR="${SPO_TOOL_DIR:-/srv/spielplanoffline/SpielplanOffline}"
 if [ -d "$TOOL_DIR" ]; then
+    # shellcheck disable=SC2016  # das Suchmuster soll wörtlich stehen bleiben
     if grep -q 'label:\\"\$(cat ' "$TOOL_DIR/runscript.awk" 2>/dev/null; then
         ok "runscript.awk: Patch für die ImageMagick-Richtlinie ist aktiv"
     else
