@@ -26,6 +26,9 @@
 #   sudo LISTEN_ADDR=10.0.0.42 ./deploy.sh    # Port 80 nur auf dieser Adresse
 #   sudo TRUSTED_PROXY=10.0.0.1 ./deploy.sh   # nur der Reverse Proxy darf fragen
 #
+# Zeitzone der Webseiten (Vorgabe: die des Servers, sonst Europe/Berlin):
+#   sudo WEB_TZ=Europe/Vienna ./deploy.sh
+#
 # Das Skript ist idempotent: es darf nach jedem `git pull` erneut laufen. Die
 # aktive teams.txt wird dabei NICHT angefasst (außer mit --force-config).
 
@@ -35,7 +38,7 @@ set -euo pipefail
 # sudo setzt die Umgebung zurück (env_reset), die Overrides müssen bei der
 # Eskalation weiter unten also ausdrücklich mitgegeben werden.
 env_overrides=()
-for var in SPO_DIR WEB_DIR SPO_LOG SPO_STATE_DIR WEB_GROUP ADMIN_USER LISTEN_ADDR TRUSTED_PROXY; do
+for var in SPO_DIR WEB_DIR SPO_LOG SPO_STATE_DIR WEB_GROUP ADMIN_USER WEB_TZ LISTEN_ADDR TRUSTED_PROXY; do
     if [ -n "${!var-}" ]; then
         env_overrides+=("$var=${!var}")
     fi
@@ -58,6 +61,9 @@ NGINX_DEFAULT_LINK="/etc/nginx/sites-enabled/default"
 # (nginx/fussballcal.conf, auth_basic_user_file) — beide müssen zusammenpassen.
 HTPASSWD_FILE="/etc/nginx/fussballcal.htpasswd"
 ADMIN_USER="${ADMIN_USER:-admin}"
+# Zeitzone, in der die Webseiten "zuletzt aktualisiert" anzeigen. Leer heißt:
+# die des Servers nehmen (siehe server_timezone weiter unten).
+WEB_TZ="${WEB_TZ:-}"
 # http-Kontext des vhosts (Rate-Limit-Zone, Real-IP, Peer-Prüfung). Debians
 # nginx.conf bindet conf.d/*.conf vor sites-enabled/ ein.
 NGINX_HTTP_CONF="/etc/nginx/conf.d/fussballcal.conf"
@@ -78,7 +84,7 @@ for arg in "$@"; do
         --force-config)   force_config=1 ;;
         --reset-password) reset_password=1 ;;
         -h|--help)
-            sed -n '3,31p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '3,33p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         *)
             echo "Unbekannte Option: $arg (siehe --help)" >&2
@@ -248,17 +254,60 @@ info "Webseiten: $WEB_DIR/{index,add_team,common}.php"
 # eine teams.txt, die der Cron-Job gar nicht liest.
 # In PHP-Strings müssen Backslash und einfaches Anführungszeichen escapt werden.
 php_quote() { printf "%s" "$1" | sed "s/\\\\/\\\\\\\\/g; s/'/\\\\'/g"; }
+
+# Zeitzone für die Anzeige von "zuletzt aktualisiert". PHP rechnet ohne
+# 'date.timezone' in der php.ini in UTC — die Übersicht zeigte die Uhrzeit des
+# letzten Laufs dann um den UTC-Versatz verschoben an, während Cron-Job und
+# Logdatei die lokale Uhr benutzen. Deshalb wird hier festgehalten, worauf der
+# Server steht; common.php nimmt den Wert und fällt ohne ihn auf Europe/Berlin
+# zurück.
+server_timezone() {
+    local tz=""
+    if command -v timedatectl >/dev/null 2>&1; then
+        tz="$(timedatectl show -p Timezone --value 2>/dev/null || true)"
+    fi
+    if [ -z "$tz" ] && [ -r /etc/timezone ]; then
+        tz="$(tr -d '[:space:]' </etc/timezone)"
+    fi
+    if [ -z "$tz" ] && [ -e /etc/localtime ]; then
+        # /etc/localtime zeigt auf .../zoneinfo/Europe/Berlin.
+        tz="$(readlink -f /etc/localtime 2>/dev/null || true)"
+        case "$tz" in
+            */zoneinfo/*) tz="${tz##*/zoneinfo/}" ;;
+            *)            tz="" ;;
+        esac
+    fi
+    printf '%s' "$tz"
+}
+
+web_tz="$WEB_TZ"
+if [ -z "$web_tz" ]; then
+    web_tz="$(server_timezone)"
+    case "$web_tz" in
+        # Ein auf UTC stehender Mietserver ist die Werkseinstellung, keine
+        # Entscheidung — und UTC ist genau die Anzeige, die hier niemand will.
+        # Ein ausdrückliches WEB_TZ=UTC bleibt davon unberührt: das ist eine.
+        ""|UTC|Etc/UTC|Universal|Etc/Universal|GMT|Etc/GMT)
+            web_tz="Europe/Berlin" ;;
+    esac
+fi
+if [ ! -f "/usr/share/zoneinfo/$web_tz" ]; then
+    echo "WARNUNG: Zeitzone '$web_tz' kennt das System nicht — nehme Europe/Berlin." >&2
+    web_tz="Europe/Berlin"
+fi
+
 cat >"$WEB_DIR/config.php" <<EOF
 <?php
-// Von deploy.sh erzeugt — Pfade dieser Installation. Nicht von Hand ändern,
-// der nächste Rollout überschreibt die Datei.
+// Von deploy.sh erzeugt — Pfade und Zeitzone dieser Installation. Nicht von
+// Hand ändern, der nächste Rollout überschreibt die Datei.
 return [
     'config_file' => '$(php_quote "$SPO_DIR/teams.txt")',
     'ics_dir'     => '$(php_quote "$WEB_DIR/ics")',
+    'timezone'    => '$(php_quote "$web_tz")',
 ];
 EOF
 chmod 644 "$WEB_DIR/config.php"
-info "Pfade fürs Formular: $WEB_DIR/config.php"
+info "Pfade fürs Formular: $WEB_DIR/config.php (Zeitzone $web_tz)"
 
 # ------------------------------------------------------------------
 # 7. Zugangsdaten für das Eintrage-Formular

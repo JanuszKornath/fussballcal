@@ -6,7 +6,8 @@
  *   index.php     — öffentliche Kalenderübersicht (ohne Auth)
  *   add_team.php  — Formular zum Eintragen (nur mit Auth, siehe requireUser())
  *
- * Enthält nur Definitionen und gibt selbst nichts aus.
+ * Enthält nur Definitionen und gibt selbst nichts aus — einzige Ausnahme ist
+ * die Zeitzone der Anzeige, die weiter unten einmalig gesetzt wird.
  */
 
 declare(strict_types=1);
@@ -21,6 +22,34 @@ $deployed = is_readable(__DIR__ . '/config.php') ? require __DIR__ . '/config.ph
 define('CONFIG_FILE', $deployed['config_file'] ?? '/srv/spielplanoffline/teams.txt');
 define('ICS_DIR',     $deployed['ics_dir']     ?? '/var/www/fussballcal/ics');
 const MAX_TEAMS = 200; // simple Obergrenze gegen Missbrauch
+
+// Zeitzone der Anzeige. Ohne 'date.timezone' in der php.ini rechnet PHP in UTC
+// — die Seite zeigte "zuletzt aktualisiert" dann im Sommer zwei Stunden zu
+// früh an, obwohl der Server längst auf lokaler Zeit läuft und der Cron-Job
+// zur lokalen Uhrzeit anstößt. Maßgeblich ist deshalb die Zeitzone aus
+// config.php, die scripts/deploy.sh vom Server übernimmt.
+//
+// Ohne diese Angabe zählt eine in der php.ini gesetzte Zeitzone — außer sie
+// steht auf UTC. Debian liefert 'date.timezone' auskommentiert aus, und dann
+// meldet ini_get() trotzdem "UTC" zurück: der eingebaute Notnagel, nicht die
+// Entscheidung eines Administrators. Beides ist von hier aus nicht zu
+// unterscheiden, und da die Kalender deutsche Spielpläne sind (fussball.de,
+// ICS mit TZID:Europe/Berlin), ist Europe/Berlin in dem Fall die bessere
+// Annahme. Wer den Server wirklich in UTC anzeigen lassen will, trägt die
+// Zeitzone ausdrücklich ein: WEB_TZ=UTC scripts/deploy.sh.
+$timezone = (string)($deployed['timezone'] ?? '');
+if ($timezone === '') {
+    $iniTimezone = (string)ini_get('date.timezone');
+    $timezone = ($iniTimezone === '' || $iniTimezone === 'UTC')
+        ? 'Europe/Berlin'
+        : $iniTimezone;
+}
+// Geprüft statt einfach gesetzt: date_default_timezone_set() warnt bei einem
+// unbekannten Namen, und diese Warnung landete mitten in der Seite.
+if (!in_array($timezone, DateTimeZone::listIdentifiers(), true)) {
+    $timezone = 'Europe/Berlin';
+}
+date_default_timezone_set($timezone);
 
 /**
  * Liest die Statusdatei, die update_all.sh neben die ICS legt.
@@ -476,7 +505,11 @@ function renderCalendarEntry(array $team, string $host, ?string $csrf): void
         <code><?= htmlspecialchars($https) ?></code><br>
         <span class="status">
             <?php if ($team['mtime'] !== null): ?>
-                zuletzt aktualisiert: <?= htmlspecialchars(date('d.m.Y H:i', $team['mtime'])) ?>
+                <?php // <time> mit voller ISO-Zeit inkl. Zeitzonen-Offset: die Anzeige
+                      // bleibt kurz, der genaue Zeitpunkt steht trotzdem eindeutig
+                      // im Markup — sichtbar als Tooltip, lesbar für Maschinen. ?>
+                zuletzt aktualisiert: <time datetime="<?= htmlspecialchars(date('c', $team['mtime'])) ?>"
+                      title="<?= htmlspecialchars(date('d.m.Y H:i:s T', $team['mtime'])) ?>"><?= htmlspecialchars(date('d.m.Y H:i', $team['mtime'])) ?></time>
             <?php elseif (($team['state']['status'] ?? '') === 'KEINE_SPIELE_MEHR_ERWARTET'): ?>
                 <?php // Statusdatei ohne ICS: die Saison war schon vorbei, als der
                       // Eintrag angelegt wurde. Ein Kalender entsteht hier nicht mehr. ?>
