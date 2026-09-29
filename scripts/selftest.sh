@@ -319,6 +319,45 @@ if [ -d "$TOOL_DIR" ]; then
     else
         bad "iconv.perl in $TOOL_DIR ist ungepatcht — Umlaute landen als Latin-1 in der .ics."
     fi
+    # Ergebnis nur nach Anpfiff: fussball.de füllt auch bei kommenden Spielen
+    # die Ergebnisfelder mit Platzhalter-Zeichen, die OCR macht daraus mal
+    # Ziffern, mal nichts. Ohne den Patch flackert der Titel, und jeder Wechsel
+    # ist für Kalender-Apps eine Terminänderung (mit Mail an Abonnenten).
+    if grep -q 'Ergebnis nur nach Anpfiff' "$TOOL_DIR/fussball2csv.awk" 2>/dev/null; then
+        ok "fussball2csv.awk: Patch 'Ergebnis nur nach Anpfiff' ist vorhanden"
+        if command -v gawk >/dev/null 2>&1; then
+            f2c_tmp=$(mktemp -d)
+            f2c_spiel() {  # Datum Zeit links rechts
+                printf '<tr class="row-headline visible-small">\n<td colspan="7">Sonntag, %s - %s Uhr | Herren | Liga</td></tr>\n' "$1" "$2"
+                printf '<tr><td class="column-club"><div class="club-name">\nA-Stadt\n</div></td>\n'
+                printf '<td class="column-club"><div class="club-name">\nTitelverein\n</div></td>\n'
+                printf '<td class="column-score">\n<a href="https://www.fussball.de/spiel/x/-/spiel/ABCD"><span class="score-left">%s</span><span class="colon">:</span><span class="score-right">%s</span></a>\n</td></tr>\n' "$3" "$4"
+            }
+            {
+                echo '<html><head><title>Titelverein Titelverein - FUSSBALL.DE</title></head><body><table><tbody>'
+                f2c_spiel 06.09.2026 15:00 2 1                      # gespielt
+                f2c_spiel 13.09.2026 15:00 3 '&#xE651;'             # halb entschlüsselt
+                f2c_spiel 04.10.2026 15:00 0 3                      # Zukunft, OCR-Phantom
+                f2c_spiel 11.10.2026 15:00 '&#xE65D;' '&#xE669;'    # Zukunft, Platzhalter
+                echo '</tbody></table></body></html>'
+            } > "$f2c_tmp/spielplan.html"
+            ( cd "$TOOL_DIR" && gawk -f fussball2csv.awk -v csvfile="$f2c_tmp/out.ics" \
+                  -v style=ICS -v Heute=202609291200 "$f2c_tmp/spielplan.html" ) >/dev/null 2>&1
+            f2c_ist=$(grep '^SUMMARY:' "$f2c_tmp/out.ics" 2>/dev/null | grep -o '([0-9?]:[0-9?])' | tr '\n' ' ')
+            f2c_soll='(2:1) (?:?) (?:?) (?:?) '
+            if [ "$f2c_ist" = "$f2c_soll" ]; then
+                ok "fussball2csv.awk: Ergebnisse nur bei gespielten Partien, sonst (?:?)"
+            else
+                bad "fussball2csv.awk: Ergebnisse im Titel falsch — erwartet '$f2c_soll', erhalten '$f2c_ist'"
+            fi
+            rm -rf "$f2c_tmp"
+        else
+            warn "gawk fehlt — Funktionstest für 'Ergebnis nur nach Anpfiff' übersprungen."
+        fi
+    else
+        bad "fussball2csv.awk in $TOOL_DIR ist ungepatcht — Platzhalter bei kommenden"
+        bad "Spielen werden zu Phantom-Ergebnissen, der Titel flackert von Lauf zu Lauf."
+    fi
 else
     warn "$TOOL_DIR nicht gefunden (kein installiertes Tool geprüft)."
     warn "Pfad ggf. per SPO_TOOL_DIR setzen."

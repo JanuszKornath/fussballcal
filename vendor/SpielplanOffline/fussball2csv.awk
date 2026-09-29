@@ -62,6 +62,14 @@ BEGIN{
     if (!Prefix) Prefix = ""
     else Prefix = Prefix " "
 
+    #LOKALER PATCH (fussballcal): Jetzt-Zeitpunkt fuer die Ergebnispruefung
+    #(siehe unten, "Ergebnis nur nach Anpfiff"). Von aussen ueberschreibbar
+    #(-v Heute=JJJJMMTTHHMM), damit der Selbsttest ein festes Datum setzen kann.
+    if (!Heute) {
+        "TZ=Europe/Berlin date +%Y%m%d%H%M" | getline Heute
+        close("TZ=Europe/Berlin date +%Y%m%d%H%M")
+    }
+
     if (!style) style="CALENDAR"
     if (!filetype) filetype="calendar"
     
@@ -350,7 +358,24 @@ function compactifyclubname(Name){
 
         HeimAuswBrackets=" [" HeimAusw "]"
         if (noHeimAusw) HeimAuswBrackets=""
-    
+
+        #LOKALER PATCH (fussballcal): Ergebnis nur nach Anpfiff.
+        #fussball.de schreibt auch bei noch nicht gespielten Partien
+        #verschleierte Platzhalter-Zeichen in score-left/score-right. Die OCR
+        #macht daraus je nach Lauf mal nichts, mal eine Ziffer, mal nur eine
+        #Seite -- der Titel flackert zwischen "", "(0:3)" und "(3:)", und jeder
+        #Wechsel ist fuer Kalender-Apps eine Terminaenderung. Uebernommen wird
+        #ein Ergebnis deshalb nur, wenn der Anpfiff vorbei ist und beide Seiten
+        #eine Ziffer ergeben; sonst steht stabil "(?:?)" im Titel.
+        Anpfiff=sprintf("%04d%02d%02d%02d%02d",JahrNNNN,Monat,Tag,Stunde,Minuten)
+        if (!error && dateset && timeset && Anpfiff <= Heute \
+            && scoreleft ~ /^[0-9]$/ && scoreright ~ /^[0-9]$/) {
+            score=scoreleft ":" scoreright
+        } else {
+            score="?:?"; scoreleft="?"; scoreright="?"
+        }
+        scoreformatted=" (" score ") "
+
         print nspiel "\t" Prefix errortext ABGESAGTTXT Tag "." Monat "." JahrNNNN "\t" Zeit "\t" Heim " - " Gast scoreformatted "\t\t (" Ort ")" HeimAuswBrackets
         if (error) print errordescription
         
@@ -389,6 +414,7 @@ function compactifyclubname(Name){
     Gast=""
     Tag=0; Monat=0; Jahr=0; Stunde=0; Minuten=0
     score=""; scoreformatted=""
+    scoreleft=""; scoreright="" #LOKALER PATCH (fussballcal): sonst erbt ein Spiel ohne Ergebnisfeld die Ziffern des vorigen
     Ort="Spielort unbekannt"
     endofrecord=False
     error=False

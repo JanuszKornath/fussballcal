@@ -9,9 +9,10 @@ externen Quellen nachgeladen.
 
 SpielplanOffline ist für macOS geschrieben. Drei Stellen funktionieren unter
 Debian/Ubuntu nicht und sind hier **lokal gepatcht** (zwei in `runscript.awk`,
-eine in `iconv.perl`). Alle drei Patches sind im Quelltext mit
-`LOKALER PATCH (fussballcal)` kommentiert und werden von `scripts/selftest.sh`
-geprüft.
+eine in `iconv.perl`). Ein vierter Patch in `fussball2csv.awk` hält
+Platzhalter von fussball.de aus den Termintiteln heraus. Alle vier Patches sind
+im Quelltext mit `LOKALER PATCH (fussballcal)` kommentiert und werden von
+`scripts/selftest.sh` geprüft.
 
 ### 1. `runscript.awk` — ImageMagick-Sicherheitsrichtlinie
 
@@ -69,6 +70,30 @@ dekodierten Strings deshalb als Latin-1, aus `Mönchengladbach` wurde in der
 `.ics` `M\366nchengladbach`. RFC 5545 schreibt UTF-8 vor; Kalender-Apps zeigen
 sonst kaputte Umlaute. Der Patch öffnet die Ausgabedatei mit `>:utf8`.
 
+### 4. `fussball2csv.awk` — Ergebnis nur nach Anpfiff
+
+Die Ergebnisse sind wie Datum und Uhrzeit per Webfont verschleiert. Bei noch
+nicht gespielten Partien stehen in `score-left`/`score-right` aber nicht etwa
+leere Felder, sondern **Platzhalter-Zeichen** (eigene Codepoints, ohne
+`icon-verified`). Die OCR liest sie von Lauf zu Lauf unterschiedlich: mal gar
+nicht, mal als Ziffer, mal nur auf einer Seite. Dazu verschiebt eine
+nicht gelesene Zeile in `decode.awk` die Zuordnung der folgenden Codes. Der
+Titel eines Spiels im Mai sprang so zwischen `(2:2)`, ohne Ergebnis und `(0:3)`
+hin und her — und jeder Wechsel ist für Kalender-Apps eine Terminänderung.
+Google Kalender verschickt dafür je eine Mail „Aktualisierte Einladung“, in
+einem Lauf schnell 20–30 Stück.
+
+Das Häkchen `icon-verified` taugt nicht als Unterscheidung: Testspiele und
+Profiligen haben auch nach dem Abpfiff keins. Zuverlässig ist nur das Datum.
+Der Patch übernimmt ein Ergebnis deshalb nur, wenn der Anpfiff vorbei ist
+**und** beide Seiten eine Ziffer ergeben; sonst steht stabil `(?:?)` im Titel.
+„Jetzt“ holt sich das Skript per `date` (Europe/Berlin); der Selbsttest setzt es
+über `-v Heute=JJJJMMTTHHMM` fest.
+
+Nicht gelöst ist damit, dass die Platzhalter weiterhin mit in die OCR gehen:
+ein echtes Ergebnis kann durch die Verschiebung gelegentlich falsch gelesen
+werden oder als `(?:?)` erscheinen.
+
 ## Auf eine neuere Version aktualisieren
 
 Fussball.de ändert Layout/Font-Obfuskation regelmäßig; wenn die ICS-Erzeugung
@@ -87,7 +112,8 @@ git commit -m "SpielplanOffline auf V<x.y> aktualisieren"
 
 **Wichtig:** Ein Update überschreibt die oben beschriebenen lokalen Patches.
 Sie müssen danach erneut angewendet werden, sonst fehlen wieder alle Datums-
-und Zeitangaben. `scripts/selftest.sh` meldet das.
+und Zeitangaben bzw. flackern die Ergebnisse im Titel. `scripts/selftest.sh`
+meldet das.
 
 Danach auf dem Server neu ausrollen (`git pull && sudo scripts/deploy.sh`, siehe
 Installations-Abschnitt im Haupt-README) und prüfen, ob die
@@ -102,8 +128,8 @@ schreibt dazu:
 > nichtkommerziellen (Amateurvereine) und privaten Bereich mit einem kurzen
 > Dankeschön frei benutzt werden.
 
-Dieses Verzeichnis liegt deshalb unverändert-in-der-Sache (bis auf die drei
-oben dokumentierten Linux-Patches) mit im Repo — und der Dank geht an den
+Dieses Verzeichnis liegt deshalb unverändert-in-der-Sache (bis auf die vier
+oben dokumentierten lokalen Patches) mit im Repo — und der Dank geht an den
 Autor: ohne sein `gawk`-Skript gäbe es fussballcal nicht.
 
 Daraus folgt zweierlei:
