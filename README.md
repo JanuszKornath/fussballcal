@@ -154,7 +154,7 @@ deshalb gibt es genau eine Passwortabfrage statt fünfzehn (siehe
 | `/srv/spielplanoffline/spo.env` | die Pfade dieser Installation; `update_all.sh` und `selftest.sh` lesen sie |
 | `/srv/spielplanoffline/work/` | Arbeitsverzeichnis (tmp/Fonts/Output) |
 | `/var/www/fussballcal/{index.php,add_team.php,common.php,ics/}` | Übersichtsseite, Formular und Kalenderverzeichnis; `ics/` ist für die Webserver-Gruppe beschreibbar (775), damit das Formular Kalender löschen kann |
-| `/var/www/fussballcal/config.php` | dieselben Pfade für die Webseiten (Pendant zu `spo.env`) |
+| `/var/www/fussballcal/config.php` | dieselben Pfade für die Webseiten plus die Zeitzone der Anzeige (Pendant zu `spo.env`) |
 | `/etc/nginx/fussballcal.htpasswd` | Zugangsdaten fürs Formular — **nur wenn sie noch nicht existieren**; beim ersten Rollout wird ein Zufallspasswort erzeugt und einmalig ausgegeben |
 | `/etc/nginx/sites-{available,enabled}/fussballcal.conf` | vhost, danach `nginx -t` + Reload; Debians Default-Site wird dabei deaktiviert (sonst kommt die nginx-Welcome-Page statt fussballcal) |
 | `/etc/nginx/conf.d/fussballcal.conf` | http-Kontext des vhosts: Rate-Limit-Zone fürs Formular und die Proxy-Prüfung (`TRUSTED_PROXY`) — wird bei **jedem** Rollout neu geschrieben |
@@ -167,6 +167,9 @@ Hand angepasst wurde), `--force-config` (teams.txt aus der Vorlage
 Zufallspasswort fürs Formular). Ziele lassen sich über `SPO_DIR`, `WEB_DIR` und
 `SPO_LOG` verschieben; `WEB_GROUP` (Vorgabe `www-data`) ist die Gruppe des
 PHP-FPM-Workers, `ADMIN_USER` (Vorgabe `admin`) der Benutzername fürs Formular.
+`WEB_TZ` setzt die Zeitzone, in der die Webseiten den Zeitpunkt der letzten
+Aktualisierung anzeigen — ohne Angabe nimmt `deploy.sh` die des Servers und,
+wenn der auf UTC steht, `Europe/Berlin`.
 `LISTEN_ADDR` und `TRUSTED_PROXY` gehören zum Betrieb am öffentlichen Netz und
 sind unten beschrieben.
 
@@ -581,7 +584,12 @@ Für das Beispiel oben also `webcal://<host>/ics/tsv_musterstadt_1.ics`.
 **Alle Links auf einen Blick** listet die Startseite `http://<host>/`
 (`index.php`) auf — mit „Abonnieren"-Link und dem Zeitpunkt der letzten
 Aktualisierung. Diese Seite braucht keine Anmeldung und kann so an alle
-weitergegeben werden, die nur abonnieren wollen. Auf dem Server direkt:
+weitergegeben werden, die nur abonnieren wollen. Die Uhrzeit steht dort in
+lokaler Zeit (Vorgabe `Europe/Berlin`, siehe `WEB_TZ` unter
+[Installation](#installation)) — nicht in UTC, damit sie sich ohne
+Kopfrechnen mit dem Cron-Takt und der Logdatei vergleichen lässt. Der genaue
+Zeitpunkt samt Zeitzone steht zusätzlich im `title` des Eintrags, also als
+Tooltip. Auf dem Server direkt:
 
 ```bash
 ls -l /var/www/fussballcal/ics/
