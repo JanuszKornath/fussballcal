@@ -41,7 +41,7 @@ anderen externen Quellen nach — alles Nötige ist Teil dieses Repos
   - [5. Saisonwechsel](#5-saisonwechsel) — Links einmal im Jahr erneuern
   - [Woran das Tool das Saisonende erkennt — und woran nicht](#woran-das-tool-das-saisonende-erkennt--und-woran-nicht)
     - [Das Archiv auf der Website](#das-archiv-auf-der-website)
-    - [Abgeschlossene Saisons ruhen](#abgeschlossene-saisons-ruhen) — kein Abruf für fertige Spielpläne
+    - [Abgeschlossene Saisons ruhen](#abgeschlossene-saisons-ruhen)
     - [Das Abfragefenster](#das-abfragefenster)
 - [Fehlersuche: keine Datums-/Zeitangaben im Kalender](#fehlersuche-keine-datums-zeitangaben-im-kalender) — die OCR-Kette prüfen
 - [sudo-Mails: „a password is required"](#sudo-mails-a-password-is-required) — Cron ohne TTY

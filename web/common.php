@@ -589,8 +589,8 @@ function renderCalendars(array $teams, string $host, ?string $csrf = null): void
                Adressen bleiben gültig und die Kalender ändern sich nicht mehr &mdash;
                ein bestehendes Abo kann als Archiv der Saison stehen bleiben.
                Mit fussball.de abgeglichen werden sie deshalb nur noch
-               gelegentlich; das Datum hinter jedem Eintrag nennt den letzten
-               Abgleich.</p>
+               gelegentlich &mdash; das Datum hinter jedem Eintrag ist darum
+               älter als bei den laufenden Kalendern.</p>
             <ul class="calendars">
             <?php foreach ($archived as $team): ?>
                 <?php renderCalendarEntry($team, $host, $csrf); ?>

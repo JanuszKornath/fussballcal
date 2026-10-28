@@ -138,8 +138,9 @@ $teams = readTeams();
        Saisonfenster abgelaufen ist, rutscht der alte Eintrag unten in das
        zugeklappte <em>Archiv</em> — auf beiden Seiten, hier mitsamt seinem
        Löschen-Knopf. Auch Laufzeit kostet er dann kaum noch: Für eine
-       abgeschlossene Saison fragt der Update-Lauf fussball.de nur noch alle
-       30 Tage, statt alle sechs Stunden.</p>
+       abgeschlossene Saison fragt der Update-Lauf fussball.de nur noch selten
+       nach statt alle sechs Stunden (Vorgabe: alle 30 Tage, einstellbar über
+       <code>SPO_ARCHIV_NACHFASSEN</code>).</p>
     <p class="hint">Sobald für eine Mannschaft kein Spiel mehr ansteht, wird der
        Kalender in der Übersicht als <em>vermutlich beendet</em> markiert und
        enthält einen entsprechenden Termin. Mit Gewissheit lässt sich das

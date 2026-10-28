@@ -243,6 +243,23 @@ else
     fi
     SAISON_NACHLAUF="$SAISON_NACHLAUF_ALT"
 
+    # Der README erlaubt beim Saisonwechsel auch, in teams.txt nur die URL der
+    # bestehenden Zeile auf die neue Saison umzuschreiben. Dann liegt dort noch
+    # die abgeschlossene Datei der alten Saison mit frischem 'geprueft' — ruhte
+    # die 30 Tage, stünde der Kalender ausgerechnet zum Saisonstart still. Das
+    # Fenster kommt aber aus der AKTUELLEN URL, und das der neuen Saison läuft.
+    saison_aus_url "$URL2526" >/dev/null
+    mach_ics "$TMP/archiv.ics" 20260601
+    ics_kennzahlen "$TMP/archiv.ics" 20260915
+    ergaenze_saisonhinweis "$TMP/archiv.ics" "tsv_test"
+    printf 'geprueft=2026-09-10T06:00:00+02:00\n' >"$TMP/archiv.state"
+    saison_aus_url 'https://www.fussball.de/mannschaft/x/-/saison/2627/team-id/011MJ#!/' >/dev/null
+    if archiv_ruht "$TMP/archiv.ics" "$TMP/archiv.state" 20260915; then
+        bad "auf die neue Saison umgeschriebene URL bleibt im Archiv stehen"
+    else
+        ok "auf die neue Saison umgeschriebene URL wird sofort abgefragt"
+    fi
+
     unset -f pruef mach_ics status_fuer ruht
 fi
 
