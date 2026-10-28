@@ -165,7 +165,102 @@ else
           "DESCRIPTION:Kreisliga Musterkreis/Herren, Nr. 012345678, importiert mit SpielplanOffline(HF) " \
           "$(cat "$TMP/nummer.ics")"
 
-    unset -f pruef mach_ics status_fuer
+    # -- Abgeschlossene Saisons ruhen lassen
+    #
+    # Geprüft wird die Entscheidung, nicht der Abruf: archiv_ruht() bekommt eine
+    # bestehende ICS und eine Statusdatei und sagt, ob der Update-Lauf die Zeile
+    # auslassen darf. Fenster der Saison 25/26 ist 2025-06-01 .. 2026-07-31.
+    ruht() { # ruht <heute> <geprueft|-> <spieldatum...>
+        local heute="$1" geprueft="$2"; shift 2
+        saison_aus_url "$URL2526" >/dev/null
+        mach_ics "$TMP/archiv.ics" "$@"
+        rm -f "$TMP/archiv.state"
+        [ "$geprueft" = "-" ] || printf 'status=KEINE_SPIELE_MEHR_ERWARTET\ngeprueft=%s\n' \
+            "$geprueft" >"$TMP/archiv.state"
+        if archiv_ruht "$TMP/archiv.ics" "$TMP/archiv.state" "$heute"; then echo ja; else echo nein; fi
+    }
+    pruef "laufende Saison wird abgefragt" "nein" \
+          "$(ruht 20260301 2026-03-01T06:00:00+01:00 20260210 20260405)"
+    pruef "abgeschlossene Saison ruht"     "ja" \
+          "$(ruht 20260901 2026-08-27T06:00:00+02:00 20260601)"
+    pruef "nach der Frist wird nachgefasst" "nein" \
+          "$(ruht 20260901 2026-07-23T06:00:00+02:00 20260601)"
+    pruef "ohne Statusdatei wird abgefragt" "nein" \
+          "$(ruht 20260901 - 20260601)"
+    pruef "unlesbarer Zeitstempel wird abgefragt" "nein" \
+          "$(ruht 20260901 irgendwann 20260601)"
+
+    # Die veröffentlichte Datei eines beendeten Kalenders enthält den
+    # Hinweis-Termin. Der zählt mit und verschiebt LETZTES_SPIEL um einen Tag –
+    # die Entscheidung muss trotzdem stehen (siehe archiv_ruht()).
+    saison_aus_url "$URL2526" >/dev/null
+    mach_ics "$TMP/archiv.ics" 20260601
+    ics_kennzahlen "$TMP/archiv.ics" 20260901
+    ergaenze_saisonhinweis "$TMP/archiv.ics" "tsv_test"
+    printf 'status=KEINE_SPIELE_MEHR_ERWARTET\ngeprueft=2026-08-27T06:00:00+02:00\n' \
+        >"$TMP/archiv.state"
+    if archiv_ruht "$TMP/archiv.ics" "$TMP/archiv.state" 20260901; then
+        ok "angehängter Hinweis-Termin ändert die Entscheidung nicht"
+    else
+        bad "angehängter Hinweis-Termin lässt den Kalender wieder abfragen"
+    fi
+
+    # Ein Vereinslink ist nicht saisongebunden – für den gibt es kein
+    # Fensterende und damit nie ein Archiv.
+    saison_aus_url 'https://www.fussball.de/verein/sv-beispiel/-/id/00ES1234' >/dev/null || true
+    mach_ics "$TMP/archiv.ics" 20260601
+    printf 'geprueft=2026-08-27T06:00:00+02:00\n' >"$TMP/archiv.state"
+    if archiv_ruht "$TMP/archiv.ics" "$TMP/archiv.state" 20260901; then
+        bad "Vereinslink ruht, obwohl er nicht saisongebunden ist"
+    else
+        ok "Vereinslink ruht nie (nicht saisongebunden)"
+    fi
+
+    # Ohne bestehende Datei gibt es nichts zu bewahren.
+    saison_aus_url "$URL2526" >/dev/null
+    rm -f "$TMP/fehlt.ics"
+    if archiv_ruht "$TMP/fehlt.ics" "$TMP/archiv.state" 20260901; then
+        bad "fehlende ICS ruht, statt den Kalender zu erzeugen"
+    else
+        ok "fehlende ICS wird abgefragt"
+    fi
+
+    # Der Pandemie-Fall: wird SPO_SAISON_NACHLAUF erhöht, weil ein Verband die
+    # Spielzeit streckt, rückt das Fensterende nach hinten. Der Kalender muss
+    # dann von selbst wieder abgefragt werden – ohne dass jemand die
+    # Statusdateien anfasst. Das ist der Grund, aus dem archiv_ruht() die
+    # Entscheidung neu berechnet, statt 'status=' aus der .state zu glauben.
+    SAISON_NACHLAUF_ALT="$SAISON_NACHLAUF"
+    SAISON_NACHLAUF="12 months"
+    saison_aus_url "$URL2526" >/dev/null
+    mach_ics "$TMP/archiv.ics" 20260601
+    printf 'status=KEINE_SPIELE_MEHR_ERWARTET\ngeprueft=2026-08-27T06:00:00+02:00\n' \
+        >"$TMP/archiv.state"
+    if archiv_ruht "$TMP/archiv.ics" "$TMP/archiv.state" 20260901; then
+        bad "gestrecktes Saisonfenster weckt den Kalender nicht wieder auf"
+    else
+        ok "gestrecktes Saisonfenster weckt den Kalender wieder auf"
+    fi
+    SAISON_NACHLAUF="$SAISON_NACHLAUF_ALT"
+
+    # Der README erlaubt beim Saisonwechsel auch, in teams.txt nur die URL der
+    # bestehenden Zeile auf die neue Saison umzuschreiben. Dann liegt dort noch
+    # die abgeschlossene Datei der alten Saison mit frischem 'geprueft' — ruhte
+    # die 30 Tage, stünde der Kalender ausgerechnet zum Saisonstart still. Das
+    # Fenster kommt aber aus der AKTUELLEN URL, und das der neuen Saison läuft.
+    saison_aus_url "$URL2526" >/dev/null
+    mach_ics "$TMP/archiv.ics" 20260601
+    ics_kennzahlen "$TMP/archiv.ics" 20260915
+    ergaenze_saisonhinweis "$TMP/archiv.ics" "tsv_test"
+    printf 'geprueft=2026-09-10T06:00:00+02:00\n' >"$TMP/archiv.state"
+    saison_aus_url 'https://www.fussball.de/mannschaft/x/-/saison/2627/team-id/011MJ#!/' >/dev/null
+    if archiv_ruht "$TMP/archiv.ics" "$TMP/archiv.state" 20260915; then
+        bad "auf die neue Saison umgeschriebene URL bleibt im Archiv stehen"
+    else
+        ok "auf die neue Saison umgeschriebene URL wird sofort abgefragt"
+    fi
+
+    unset -f pruef mach_ics status_fuer ruht
 fi
 
 # ------------------------------------------------------------------

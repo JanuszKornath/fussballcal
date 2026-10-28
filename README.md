@@ -41,6 +41,7 @@ anderen externen Quellen nach — alles Nötige ist Teil dieses Repos
   - [5. Saisonwechsel](#5-saisonwechsel) — Links einmal im Jahr erneuern
   - [Woran das Tool das Saisonende erkennt — und woran nicht](#woran-das-tool-das-saisonende-erkennt--und-woran-nicht)
     - [Das Archiv auf der Website](#das-archiv-auf-der-website)
+    - [Abgeschlossene Saisons ruhen](#abgeschlossene-saisons-ruhen)
     - [Das Abfragefenster](#das-abfragefenster)
 - [Fehlersuche: keine Datums-/Zeitangaben im Kalender](#fehlersuche-keine-datums-zeitangaben-im-kalender) — die OCR-Kette prüfen
 - [sudo-Mails: „a password is required"](#sudo-mails-a-password-is-required) — Cron ohne TTY
@@ -209,8 +210,9 @@ Beide Skripte lesen die Pfade dieser Installation aus `spo.env` (von
 Das Zeitfenster, in dem Spiele in den Kalender wandern, ergibt sich ohne weitere
 Angabe aus der Saison in der URL der jeweiligen Zeile. `SPO_SAISON_VORLAUF`,
 `SPO_SAISON_NACHLAUF`, `SPO_SAISON_KARENZ` und `SPO_SAISON_RANDABSTAND` stellen
-es und die Saisonerkennung ein, `SPO_START`/`SPO_END` setzen beides außer Kraft
-und geben ein festes Fenster für alle Zeilen vor. Einzelheiten unter
+es und die Saisonerkennung ein, `SPO_ARCHIV_NACHFASSEN` den Abstand, in dem
+abgeschlossene Saisons überhaupt noch abgefragt werden, und `SPO_START`/`SPO_END`
+setzen das Fenster außer Kraft und geben eines für alle Zeilen vor. Einzelheiten unter
 [Woran das Tool das Saisonende erkennt](#woran-das-tool-das-saisonende-erkennt--und-woran-nicht).
 
 Zwei Läufe gleichzeitig gibt es nicht: `update_all.sh` hält ein `flock` auf
@@ -766,12 +768,53 @@ ist.
 Vereinslinks erreichen den Status gar nicht — ohne Saison in der URL gibt es kein
 Fensterende — und bleiben deshalb dauerhaft in der Übersicht, wo sie hingehören.
 
-Das Archiv ist eine **Anzeigefrage, keine Betriebsfrage**: Die Adressen bleiben
-unverändert gültig, die Dateien werden weiter ausgeliefert, und der Cron-Job
-fragt auch archivierte Einträge bei jedem Lauf ab. Ein bestehendes Abo kann
-deshalb als Archiv der Saison in der Kalender-App stehen bleiben. Auf
-`add_team.php` ist das Archiv derselbe Block, nur mitsamt der Löschen-Knöpfe —
-zum Aufräumen alter Saisons.
+Am Betrieb ändert das Archiv nichts, was Abonnenten merken würden: Die Adressen
+bleiben unverändert gültig und die Dateien werden weiter ausgeliefert. Ein
+bestehendes Abo kann deshalb als Archiv der Saison in der Kalender-App stehen
+bleiben. Auf `add_team.php` ist das Archiv derselbe Block, nur mitsamt der
+Löschen-Knöpfe — zum Aufräumen alter Saisons. Was sich ändert, ist der
+Aktualisierungstakt: siehe
+[Abgeschlossene Saisons ruhen](#abgeschlossene-saisons-ruhen).
+
+#### Abgeschlossene Saisons ruhen
+
+Ein Kalender mit `KEINE_SPIELE_MEHR_ERWARTET` ändert sich nicht mehr. Ihn alle
+sechs Stunden erneut zu holen kostet trotzdem einen vollen Durchlauf: Seite
+laden, Webfont rendern, OCR, CSV, ICS — für ein Ergebnis, das schon auf der
+Platte liegt. Weil zum Saisonwechsel pro Mannschaft ein Eintrag dazukommt und
+der alte stehen bleibt, ist das nach wenigen Saisons der größere Teil jedes
+Laufs.
+
+`update_all.sh` lässt solche Zeilen deshalb **ruhen**: kein Abruf, nur eine
+`ARCHIV`-Zeile im Log — die steht anstelle der `Verarbeite`-Zeile und des
+SpielplanOffline-Protokolls, das sonst folgt, der Lauf wird also leiser und
+nicht geschwätziger.
+
+Ganz aufhören wäre zu scharf. „Abgeschlossen" ist eine Aussage über das
+Datumsfenster, keine Zusage von fussball.de, und das Projekt behauptet an keiner
+Stelle mehr, als es weiß. Deshalb wird weiter nachgefasst, nur in großem
+Abstand: `SPO_ARCHIV_NACHFASSEN` (Vorgabe 30 Tage, gerechnet ab dem letzten
+Abruf) lässt von rund 120 Abrufen einen übrig und findet ein nachgetragenes
+Spiel immer noch, bevor es jemandem fehlt.
+
+Zwei Eigenschaften sind dabei Absicht:
+
+- **Die Entscheidung wird jedes Mal neu berechnet**, aus der bestehenden `.ics`
+  und dem Fenster der URL — nicht aus dem `status=` in der `.state`. Wird
+  `SPO_SAISON_NACHLAUF` erhöht, weil ein Verband die Spielzeit gestreckt hat
+  (siehe die Pandemie-Ausnahme unten), rückt das Fensterende nach hinten und
+  der Kalender ist beim nächsten Lauf von selbst wieder im Rennen. Niemand muss
+  Statusdateien anfassen. Der Selbsttest prüft genau diesen Fall.
+- **Die `.state` wird beim Ruhen nicht neu geschrieben.** `geprueft=` nennt
+  damit den letzten *Abruf*, nicht den letzten *Lauf* — sonst käme das
+  Nachfassen nie zustande. Auch die `.ics` bleibt unberührt, die Übersicht zeigt
+  deshalb weiter den Stand des letzten Abrufs. Für einen beendeten Kalender ist
+  das die ehrlichere Angabe als ein täglich neues Datum an einer Datei, die sich
+  nicht geändert hat.
+
+Vereinslinks und ein per `SPO_START`/`SPO_END` fest vorgegebenes Fenster ruhen
+nie: Beiden fehlt die Saison in der URL und damit das Fensterende, und wer den
+Notausgang zieht, will ohnehin einen vollen Lauf.
 
 #### Das Abfragefenster
 

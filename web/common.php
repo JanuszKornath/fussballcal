@@ -587,7 +587,10 @@ function renderCalendars(array $teams, string $host, ?string $csrf = null): void
             <p class="hint">Für diese Mannschaften ist die Saison abgeschlossen: das
                Saisonfenster ist abgelaufen, es kommen keine Spiele mehr dazu. Die
                Adressen bleiben gültig und die Kalender ändern sich nicht mehr &mdash;
-               ein bestehendes Abo kann als Archiv der Saison stehen bleiben.</p>
+               ein bestehendes Abo kann als Archiv der Saison stehen bleiben.
+               Mit fussball.de abgeglichen werden sie deshalb nur noch
+               gelegentlich &mdash; das Datum hinter jedem Eintrag ist darum
+               älter als bei den laufenden Kalendern.</p>
             <ul class="calendars">
             <?php foreach ($archived as $team): ?>
                 <?php renderCalendarEntry($team, $host, $csrf); ?>

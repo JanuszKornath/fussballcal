@@ -61,6 +61,19 @@ SAISON_RANDABSTAND_TAGE="${SPO_SAISON_RANDABSTAND:-14}"
 # (Staffeleinteilung steht dann oft noch nicht).
 SAISON_VORSAISON_FRIST="${SPO_SAISON_VORSAISON_FRIST:-3 months}"
 
+# Wie lange ein abgeschlossener Kalender zwischen zwei Abrufen ruht.
+#
+# Ist das Saisonfenster abgelaufen und steht kein Spiel mehr an, ändert sich die
+# Datei nicht mehr — sie alle sechs Stunden erneut von fussball.de zu holen
+# kostet einen vollen OCR-Durchlauf für ein Ergebnis, das schon vorliegt. Nach
+# drei Saisons ist das der größere Teil jedes Laufs.
+#
+# Ganz aufhören wäre aber zu scharf: "abgeschlossen" ist eine Aussage über das
+# Datumsfenster, keine Zusage von fussball.de. Deshalb wird weiter nachgefasst,
+# nur eben in großem Abstand. Ein Monat lässt von 120 Abrufen einen übrig und
+# findet ein nachgetragenes Spiel immer noch, bevor es jemandem fehlt.
+SAISON_ARCHIV_NACHFASSEN="${SPO_ARCHIV_NACHFASSEN:-30 days}"
+
 # Liest die Saison aus einer fussball.de-URL und leitet daraus das
 # Abfragefenster ab. Setzt SAISON, SAISON_NOMINALENDE, FENSTER_START und
 # FENSTER_ENDE; Rückgabe 1, wenn die URL keine Saison nennt.
@@ -196,6 +209,63 @@ fenster_zu_eng() {
     [ -n "${LETZTES_SPIEL:-}" ] && [ -n "${FENSTER_ENDE:-}" ] || return 1
     randgrenze=$(date -d "$FENSTER_ENDE -$SAISON_RANDABSTAND_TAGE days" +%Y%m%d)
     (( 10#$LETZTES_SPIEL > 10#$randgrenze ))
+}
+
+# Darf der Abruf bei fussball.de für diesen Kalender ausfallen?
+#
+# Rückgabe 0 = ruhen lassen. Setzt dabei ARCHIV_GEPRUEFT auf den Zeitpunkt des
+# letzten echten Abrufs, damit der Aufrufer ihn ins Log schreiben kann.
+#
+# Erwartet SAISON und FENSTER_START/FENSTER_ENDE aus saison_aus_url(). Ist
+# SAISON leer, ruht nichts: das trifft Vereinslinks, die gar nicht
+# saisongebunden sind, und ein per SPO_START/SPO_END fest vorgegebenes Fenster —
+# wer den Notausgang zieht, will einen vollen Lauf.
+#
+# ÜBERSCHREIBT NEVENTS/LETZTES_SPIEL/SPIELE_ZUKUNFT/STATUS, weil die Prüfung
+# durch ics_kennzahlen() und saison_status() läuft. Der Aufrufer setzt sie nach
+# einem Abruf ohnehin neu; ohne Abruf bricht er die Zeile hier ab.
+#
+# Entschieden wird bewusst aus der BESTEHENDEN Datei neu, nicht aus dem Status
+# in <slug>.state: Wird SPO_SAISON_NACHLAUF erhöht, weil ein Verband die
+# Spielzeit gestreckt hat (siehe oben), rückt das Fensterende nach hinten und
+# der Kalender ist beim nächsten Lauf von selbst wieder im Rennen — ohne dass
+# jemand die Statusdateien anfassen muss. Derselbe Grund, aus dem die Website
+# den Status nicht fortschreibt, sondern jedes Mal frisch bewertet.
+archiv_ruht() {
+    local ics="$1" state="$2" heute="${3:-$(date +%Y%m%d)}" grenze
+
+    ARCHIV_GEPRUEFT=""
+
+    [ -n "${SAISON:-}" ] && [ -n "${FENSTER_ENDE:-}" ] || return 1
+
+    # Ohne bestehende Datei gibt es nichts zu bewahren – dann wird abgefragt.
+    [ -s "$ics" ] || return 1
+
+    # Anders als im Update-Lauf steht hier die VERÖFFENTLICHTE Datei, die bei
+    # einem beendeten Kalender den Hinweis-Termin aus ergaenze_saisonhinweis()
+    # enthält. Der zählt als Termin mit und schiebt LETZTES_SPIEL um einen Tag
+    # nach hinten. Die Entscheidung kippt das nicht: Der Hinweis liegt einen Tag
+    # nach dem letzten Spiel und damit selbst in der Vergangenheit, also bleibt
+    # SPIELE_ZUKUNFT bei 0, und bis zum Fensterende ist die Karenz von 21 Tagen
+    # ohnehin lange überschritten. Steht der Termin doch in der Zukunft, war das
+    # letzte Spiel gestern – dann ist die Saison nicht abgeschlossen und es wird
+    # abgefragt. Der Irrtum geht also immer zugunsten eines Abrufs aus.
+    ics_kennzahlen "$ics" "$heute"
+    saison_status "$heute"
+    [ "$STATUS" = "KEINE_SPIELE_MEHR_ERWARTET" ] || return 1
+
+    # "geprueft" nennt den letzten Abruf, nicht den letzten Lauf: Beim Ruhen
+    # schreibt update_all.sh die Statusdatei nicht neu. Fehlt sie oder ist der
+    # Zeitstempel unlesbar, wird abgefragt – lieber ein Abruf zu viel als ein
+    # Kalender, der nie wieder angesehen wird.
+    [ -r "$state" ] || return 1
+    ARCHIV_GEPRUEFT="$(sed -n 's/^geprueft=\(.*\)$/\1/p' "$state" | tail -1)"
+    [ -n "$ARCHIV_GEPRUEFT" ] || return 1
+
+    grenze="$(date -d "$ARCHIV_GEPRUEFT +$SAISON_ARCHIV_NACHFASSEN" +%Y%m%d 2>/dev/null)" || return 1
+    [ -n "$grenze" ] || return 1
+
+    (( 10#$heute < 10#$grenze ))
 }
 
 # Hängt einen Hinweis-Termin an den Kalender.
