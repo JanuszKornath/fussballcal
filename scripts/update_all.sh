@@ -188,17 +188,37 @@ while IFS=';' read -r slug url || [[ -n "${slug:-}" ]]; do
         SAISON=""; SAISON_NOMINALENDE=""
         FENSTER_START="${SPO_START:-$ROLL_STARTDATE}"
         FENSTER_ENDE="${SPO_END:-$ROLL_ENDDATE}"
-        log "Verarbeite $slug ($url) – Fenster $FENSTER_START .. $FENSTER_ENDE (vorgegeben)"
+        FENSTER_HERKUNFT="Fenster $FENSTER_START .. $FENSTER_ENDE (vorgegeben)"
     elif saison_aus_url "$url"; then
-        log "Verarbeite $slug ($url) – Saison ${SAISON:0:2}/${SAISON:2:2}," \
-            "Fenster $FENSTER_START .. $FENSTER_ENDE"
+        FENSTER_HERKUNFT="Saison ${SAISON:0:2}/${SAISON:2:2}, Fenster $FENSTER_START .. $FENSTER_ENDE"
     else
         SAISON=""; SAISON_NOMINALENDE=""
         FENSTER_START="$ROLL_STARTDATE"
         FENSTER_ENDE="$ROLL_ENDDATE"
-        log "Verarbeite $slug ($url) – keine Saison in der URL," \
-            "Fenster rollierend $FENSTER_START .. $FENSTER_ENDE"
+        FENSTER_HERKUNFT="keine Saison in der URL, Fenster rollierend $FENSTER_START .. $FENSTER_ENDE"
     fi
+
+    # Abgeschlossene Saisons ruhen lassen (archiv_ruht() in saison.sh). Für die
+    # liegt das Ergebnis schon auf der Platte; ein Abruf wäre ein vollständiger
+    # OCR-Durchlauf für eine Datei, die sich nicht mehr ändert. Die Notiz steht
+    # hier ANSTELLE der "Verarbeite"-Zeile und anstelle des SpielplanOffline-
+    # Protokolls, das sonst folgt – der Lauf wird dadurch leiser, nicht
+    # geschwätziger.
+    #
+    # Die Statusdatei wird dabei nicht neu geschrieben: "geprueft" soll den
+    # letzten Abruf nennen, sonst käme das Nachfassen nie zustande. Auch die
+    # ICS bleibt unberührt, die Webseite zeigt deshalb weiter den Stand des
+    # letzten Abrufs – für einen beendeten Kalender die ehrlichere Angabe als
+    # ein täglich neues Datum an einer unveränderten Datei.
+    if archiv_ruht "$OUTDIR/$slug.ics" "$OUTDIR/$slug.state" "$HEUTE"; then
+        log "ARCHIV $slug: Saison ${SAISON:0:2}/${SAISON:2:2} ist abgeschlossen" \
+            "(Fenster bis $FENSTER_ENDE), zuletzt abgefragt am $ARCHIV_GEPRUEFT –" \
+            "kein Abruf. Nachgefasst wird $SAISON_ARCHIV_NACHFASSEN nach dem Abruf" \
+            "(SPO_ARCHIV_NACHFASSEN)."
+        continue
+    fi
+
+    log "Verarbeite $slug ($url) – $FENSTER_HERKUNFT"
 
     TMP_OUT="$TMP_BASE/out_$slug"
     TMP_IN="$TMP_BASE/in_$slug"
