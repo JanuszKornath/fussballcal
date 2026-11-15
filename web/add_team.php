@@ -84,7 +84,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !hash_equals($csrf, (string)($_POST
             }
         }
 
-        if (count($existing) >= MAX_TEAMS) {
+        // Nur echte slug;url-Zeilen zählen. Mit count($existing) fräßen
+        // Kommentar- und Leerzeilen das Limit auf — allein die Vorlage
+        // bringt 18 Kommentarzeilen mit.
+        $teamCount = count(array_filter(
+            $existing,
+            static fn(string $l): bool => preg_match('/^\s*[a-z0-9_-]+\s*;/', $l) === 1
+        ));
+
+        if ($teamCount >= MAX_TEAMS) {
             $message = 'Maximale Anzahl an Teams erreicht.';
         } elseif ($slugTaken) {
             $message = "Kurzname '$slug' ist bereits vergeben.";

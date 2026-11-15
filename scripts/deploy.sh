@@ -18,7 +18,7 @@
 # Aufruf:
 #   ./deploy.sh                 # eskaliert selbst per sudo (eine Passwortabfrage)
 #   sudo ./deploy.sh            # genauso gut
-#   sudo ./deploy.sh --no-nginx # vhost und nginx-Reload überspringen
+#   sudo ./deploy.sh --no-nginx # nginx gar nicht anfassen (vhost, conf.d, Reload)
 #   sudo ./deploy.sh --force-config   # teams.txt mit der Vorlage überschreiben
 #   sudo ./deploy.sh --reset-password # neues Zufallspasswort fürs Formular
 #
@@ -494,6 +494,25 @@ EOF
     fi
 elif [ "$with_nginx" -eq 1 ]; then
     info "nginx nicht gefunden — vhost übersprungen"
+else
+    info "--no-nginx: nginx-Konfiguration nicht angefasst (vhost, conf.d, Default-Site)"
+fi
+
+# --no-nginx überspringt den ganzen Abschnitt 8, also auch die conf.d-Datei und
+# die listen-Zeile. LISTEN_ADDR und TRUSTED_PROXY laufen dann ins Leere — wer
+# sie trotzdem setzt, glaubt sich sonst geschützt und ist es nicht.
+nginx_warnung=""
+if [ "$with_nginx" -eq 0 ]; then
+    wirkungslos=""
+    [ -n "$LISTEN_ADDR" ]   && wirkungslos="LISTEN_ADDR"
+    [ -n "$TRUSTED_PROXY" ] && wirkungslos="${wirkungslos:+$wirkungslos und }TRUSTED_PROXY"
+    if [ -n "$wirkungslos" ]; then
+        nginx_warnung="
+WARNUNG: $wirkungslos gesetzt, aber mit --no-nginx wirkungslos — das Skript
+schreibt dann weder den vhost noch $NGINX_HTTP_CONF.
+Rate-Limit-Zone, Real-IP und Proxy-Prüfung müssen von Hand gepflegt werden
+(README: \"Den vhost selbst pflegen\")."
+    fi
 fi
 
 echo "------------------------------------------------------------------"
@@ -523,7 +542,7 @@ Hinweis: TRUSTED_PROXY ist nicht gesetzt — dieser vhost beantwortet Anfragen
 von jeder Gegenstelle, die ihn erreicht. Am öffentlichen Netz gehört das
 gesetzt (README: "Absicherung im öffentlichen Netz").
 HINT
-fi)
+fi)$nginx_warnung
 
 Die Cron-Jobs werden separat eingerichtet (cron/crontab.example).
 EOF
