@@ -286,35 +286,44 @@ archiv_ruht() {
 # den Kalender in diesem Zustand ins Archiv der Übersicht schiebt, statt ihn zu
 # entfernen (web/common.php, isArchived()).
 #
+# Nur für Zeilen mit Saison in der URL (SAISON gesetzt); sonst passiert nichts
+# und die Rückgabe ist 1. Ohne Saison ist die Zeile in aller Regel ein
+# Vereinslink, und für den ist jeder Satz des Hinweises falsch: er ist nicht
+# saisongebunden, sein Kalender läuft von selbst in die neue Saison weiter,
+# und "kein Spiel seit drei Wochen" heißt dort schlicht Sommerpause. Das
+# rollierende Fenster endet immer in der Zukunft, der Status bliebe also den
+# ganzen Sommer über SAISONENDE_VERMUTLICH. Den Preis zahlt der Staffellink
+# ohne /saison/NNNN/ im Pfad, der bei fussball.de sehr wohl saisongebunden ist,
+# hier aber nicht von einem Vereinslink zu unterscheiden — er wird ohnehin
+# durchgehend wie einer behandelt (README, "Das Abfragefenster"). Dieselbe
+# Entscheidung trifft die Website: seasonBadge() in web/common.php zeigt ohne
+# Saison kein "beendet"-Abzeichen.
+#
 # Erwartet LETZTES_SPIEL und SAISON. SUMMARY und DESCRIPTION stehen bewusst in
 # je einer langen Zeile statt nach RFC 5545 umgebrochen ("folding"): so macht es
 # fussball2csv.awk für alle anderen Termine auch, und die Kalender-Apps kommen
 # damit erwiesenermaßen zurecht. Ein falsch eingerückter Umbruch fiele dagegen
 # als verstümmelter Text auf.
 ergaenze_saisonhinweis() {
-    local f="$1" slug="$2" ab bis saisontext
+    local f="$1" slug="$2" ab bis
+
+    [ -n "${SAISON:-}" ] || return 1
 
     # Tag nach dem letzten Spiel; DTEND ist bei Ganztagsterminen exklusiv.
     ab=$(date -d "$LETZTES_SPIEL +1 day" +%Y%m%d)
     bis=$(date -d "$LETZTES_SPIEL +2 days" +%Y%m%d)
-
-    if [ -n "${SAISON:-}" ]; then
-        saisontext="Saison ${SAISON:0:2}/${SAISON:2:2}"
-    else
-        saisontext="Die Saison"
-    fi
 
     {
         grep -v '^END:VCALENDAR$' "$f"
         cat <<EOF
 
 BEGIN:VEVENT
-UID:saisonende-$slug-${SAISON:-x}@fussballcal
+UID:saisonende-$slug-$SAISON@fussballcal
 DTSTAMP:$(date -u +%Y%m%dT%H%M%SZ)
 DTSTART;VALUE=DATE:$ab
 DTEND;VALUE=DATE:$bis
 TRANSP:TRANSPARENT
-SUMMARY:$saisontext ist beendet – neuen Kalender abonnieren
+SUMMARY:Saison ${SAISON:0:2}/${SAISON:2:2} ist beendet – neuen Kalender abonnieren
 DESCRIPTION:Für diese Mannschaft stehen keine weiteren Spiele an. fussball.de vergibt pro Saison eigene Links\, dieses Abo läuft also nicht von selbst mit der neuen Saison weiter: den Kalender der neuen Saison gibt es auf der Übersichtsseite dieses Dienstes. Dieses Abo kann danach in der Kalender-App entfernt werden – nötig ist das nicht\, es behält den Spielplan dieser Saison und ändert sich nicht mehr.\n\nWerden doch noch Nachhol- oder Pokalspiele angesetzt\, verschwindet dieser Hinweis beim nächsten Abgleich von selbst.
 SEQUENCE:0
 END:VEVENT

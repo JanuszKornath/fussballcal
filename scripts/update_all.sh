@@ -300,8 +300,13 @@ EOF
                 log "FEHLER: $slug.ics verworfen – bestehende Datei bleibt unverändert."
                 ;;
             *)
-                if [ "$STATUS" != "LAUFEND" ]; then
-                    ergaenze_saisonhinweis "$TMP_OUT/$slug.ics" "$slug"
+                # Den Hinweis-Termin gibt es nur mit Saison in der URL –
+                # ergaenze_saisonhinweis() lehnt sonst ab (Vereinslink in der
+                # Sommerpause, siehe dort).
+                HINWEIS_ANGEHAENGT=0
+                if [ "$STATUS" != "LAUFEND" ] \
+                    && ergaenze_saisonhinweis "$TMP_OUT/$slug.ics" "$slug"; then
+                    HINWEIS_ANGEHAENGT=1
                 fi
 
                 # Atomarer Ersatz, damit nginx nie eine halb geschriebene Datei ausliefert
@@ -314,10 +319,17 @@ EOF
                             "$SPIELE_ZUKUNFT davon noch offen)."
                         ;;
                     SAISONENDE_VERMUTLICH)
-                        log "OK: $slug.ics aktualisiert ($NEVENTS Termine)." \
-                            "Kein Spiel mehr in der Zukunft, letztes am $LETZTES_SPIEL –" \
-                            "Saison vermutlich beendet, Hinweis-Termin angehängt." \
-                            "Nachhol- oder Pokalspiele können das zurückdrehen."
+                        if [ "$HINWEIS_ANGEHAENGT" -eq 1 ]; then
+                            log "OK: $slug.ics aktualisiert ($NEVENTS Termine)." \
+                                "Kein Spiel mehr in der Zukunft, letztes am $LETZTES_SPIEL –" \
+                                "Saison vermutlich beendet, Hinweis-Termin angehängt." \
+                                "Nachhol- oder Pokalspiele können das zurückdrehen."
+                        else
+                            log "OK: $slug.ics aktualisiert ($NEVENTS Termine)." \
+                                "Kein Spiel mehr in der Zukunft, letztes am $LETZTES_SPIEL." \
+                                "Keine Saison in der URL, deshalb kein Hinweis-Termin –" \
+                                "bei einem Vereinslink ist das die Sommerpause."
+                        fi
                         ;;
                     KEINE_SPIELE_MEHR_ERWARTET)
                         log "OK: $slug.ics aktualisiert ($NEVENTS Termine)." \
