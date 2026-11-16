@@ -32,6 +32,7 @@ anderen externen Quellen nach — alles Nötige ist Teil dieses Repos
   - [Wenn jemand am Formular klopft](#wenn-jemand-am-formular-klopft) — Fehlversuche melden
     - [Nachsehen, ob es wirklich funktioniert](#nachsehen-ob-es-wirklich-funktioniert)
   - [Absicherung im öffentlichen Netz](#absicherung-im-öffentlichen-netz)
+  - [Den vhost selbst pflegen (`--no-nginx`)](#den-vhost-selbst-pflegen---no-nginx)
   - [Fehlersuche: es erscheint die nginx-Welcome-Page](#fehlersuche-es-erscheint-die-nginx-welcome-page)
 - [Benutzung](#benutzung) — der Alltag mit dem Dienst
   - [1. Den fussball.de-Link heraussuchen](#1-den-fussballde-link-heraussuchen)
@@ -63,7 +64,10 @@ fussballcal/
 │   ├── deploy.sh           # rollt Repo-Inhalt nach /srv und /var/www aus
 │   │                       # (ein einziger sudo-Aufruf, idempotent)
 │   ├── update_all.sh       # Cron-Wrapper: liest teams.txt, ruft SpielplanOffline auf
-│   ├── selftest.sh         # prüft die OCR-Toolchain (ImageMagick, tesseract, Patches)
+│   ├── saison.sh           # Saisonlogik (Fenster, Status, Archiv-Ruhe); wird von
+│   │                       # update_all.sh und selftest.sh gesourct
+│   ├── selftest.sh         # prüft Saisonlogik, loginwatch und die OCR-Toolchain
+│   │                       # (ImageMagick, tesseract, Patches)
 │   ├── set_password.sh     # Zugangsdaten für das Eintrage-Formular (Basic Auth)
 │   ├── loginwatch.sh       # Cron-Job: meldet gehäufte Fehlversuche am Formular
 │   ├── mysetup.sh          # Linux-Overrides für SpielplanOffline (Locale, kein "open")
@@ -95,8 +99,11 @@ Kette ist der empfindliche Teil des Aufbaus — siehe
 [Fehlersuche](#fehlersuche-keine-datums-zeitangaben-im-kalender).
 
 Drei Stellen des Tools funktionieren unter Debian/Ubuntu nicht und sind in
-`vendor/` **lokal gepatcht** (Details: `vendor/README.md`). Nach einem Update
-von SpielplanOffline müssen die Patches erneut angewendet werden.
+`vendor/` **lokal gepatcht**; ein vierter Patch in `fussball2csv.awk` übernimmt
+ein Ergebnis erst nach dem Anpfiff in den Termintitel, weil fussball.de bei
+kommenden Spielen Platzhalter liefert, die die OCR von Lauf zu Lauf anders
+liest (Details zu allen vieren: `vendor/README.md`). Nach einem Update von
+SpielplanOffline müssen die Patches erneut angewendet werden.
 
 Der Aufruf erfolgt **nicht** über `--flags`, sondern über eine gesourcte
 Parameterdatei. `update_all.sh` erzeugt pro Team eine temporäre Parameterdatei
@@ -151,22 +158,28 @@ deshalb gibt es genau eine Passwortabfrage statt fünfzehn (siehe
 |---|---|
 | `/srv/spielplanoffline/SpielplanOffline/` | das Tool aus `vendor/` inkl. Patches und `mysetup.sh` |
 | `/srv/spielplanoffline/{update_all.sh,selftest.sh,set_password.sh,loginwatch.sh}` | Wrapper, Selbsttest, Passwortverwaltung und die Auswertung der Fehlversuche (ausführbar) |
+| `/srv/spielplanoffline/saison.sh` | Saisonlogik; wird von `update_all.sh` und `selftest.sh` gesourct und muss neben ihnen liegen (644, nicht ausführbar) |
 | `/srv/spielplanoffline/teams.txt` | Team-Liste — **nur wenn sie noch nicht existiert**; für die Webserver-Gruppe beschreibbar (664), damit `add_team.php` Zeilen anhängen kann |
-| `/srv/spielplanoffline/spo.env` | die Pfade dieser Installation; `update_all.sh` und `selftest.sh` lesen sie |
+| `/srv/spielplanoffline/spo.env` | die Pfade dieser Installation; `update_all.sh`, `selftest.sh` und `loginwatch.sh` lesen sie |
 | `/srv/spielplanoffline/work/` | Arbeitsverzeichnis (tmp/Fonts/Output) |
 | `/var/www/fussballcal/{index.php,add_team.php,common.php,ics/}` | Übersichtsseite, Formular und Kalenderverzeichnis; `ics/` ist für die Webserver-Gruppe beschreibbar (775), damit das Formular Kalender löschen kann |
 | `/var/www/fussballcal/config.php` | dieselben Pfade für die Webseiten plus die Zeitzone der Anzeige (Pendant zu `spo.env`) |
 | `/etc/nginx/fussballcal.htpasswd` | Zugangsdaten fürs Formular — **nur wenn sie noch nicht existieren**; beim ersten Rollout wird ein Zufallspasswort erzeugt und einmalig ausgegeben |
-| `/etc/nginx/sites-{available,enabled}/fussballcal.conf` | vhost, danach `nginx -t` + Reload; Debians Default-Site wird dabei deaktiviert (sonst kommt die nginx-Welcome-Page statt fussballcal) |
-| `/etc/nginx/conf.d/fussballcal.conf` | http-Kontext des vhosts: Rate-Limit-Zone fürs Formular und die Proxy-Prüfung (`TRUSTED_PROXY`) — wird bei **jedem** Rollout neu geschrieben |
+| `/etc/nginx/sites-{available,enabled}/fussballcal.conf` | vhost, danach `nginx -t` + Reload; Debians Default-Site wird dabei deaktiviert (sonst kommt die nginx-Welcome-Page statt fussballcal) — **nicht mit `--no-nginx`** |
+| `/etc/nginx/conf.d/fussballcal.conf` | http-Kontext des vhosts: Rate-Limit-Zone fürs Formular und die Proxy-Prüfung (`TRUSTED_PROXY`) — wird bei **jedem** Rollout neu geschrieben, **nicht mit `--no-nginx`** |
 | `/var/lib/fussballcal/` | Zwischenstand von `loginwatch.sh` (Leseposition im nginx-Log, mitgezählte Fehlversuche); `750`, weil dort IP-Adressen stehen |
 | `/var/log/spielplanoffline.log` | Logdatei (wird nie geleert) |
 
-Optionen: `--no-nginx` (vhost und Reload überspringen, z.B. wenn der vhost von
-Hand angepasst wurde), `--force-config` (teams.txt aus der Vorlage
+Optionen: `--no-nginx` (nginx gar nicht anfassen, z.B. wenn der vhost von
+Hand angepasst wurde — das überspringt **alles** unter `/etc/nginx/` außer der
+Passwortdatei, also auch die `conf.d`-Datei und das Entfernen der
+Default-Site; siehe
+[Den vhost selbst pflegen](#den-vhost-selbst-pflegen---no-nginx)),
+`--force-config` (teams.txt aus der Vorlage
 überschreiben, Sicherung als `teams.txt.bak`) und `--reset-password` (neues
-Zufallspasswort fürs Formular). Ziele lassen sich über `SPO_DIR`, `WEB_DIR` und
-`SPO_LOG` verschieben; `WEB_GROUP` (Vorgabe `www-data`) ist die Gruppe des
+Zufallspasswort fürs Formular). Ziele lassen sich über `SPO_DIR`, `WEB_DIR`,
+`SPO_LOG` und `SPO_STATE_DIR` (Zwischenstand von `loginwatch.sh`, Vorgabe
+`/var/lib/fussballcal`) verschieben; `WEB_GROUP` (Vorgabe `www-data`) ist die Gruppe des
 PHP-FPM-Workers, `ADMIN_USER` (Vorgabe `admin`) der Benutzername fürs Formular.
 `WEB_TZ` setzt die Zeitzone, in der die Webseiten den Zeitpunkt der letzten
 Aktualisierung anzeigen — ohne Angabe nimmt `deploy.sh` die des Servers und,
@@ -203,16 +216,29 @@ tail -n 40 /var/log/spielplanoffline.log
 ls -l /var/www/fussballcal/ics/
 ```
 
-Beide Skripte lesen die Pfade dieser Installation aus `spo.env` (von
-`deploy.sh` erzeugt); gesetzte Umgebungsvariablen haben Vorrang:
-`SPO_TOOL_DIR`, `SPO_CONFIG`, `SPO_OUTDIR`, `SPO_HOME`, `SPO_LOG`, dazu
-`SPO_ENV` für die Datei selbst und `SPO_LOCK` für die Lockdatei.
+Beide Skripte — und `loginwatch.sh` — lesen die Pfade dieser Installation aus
+`spo.env` (von `deploy.sh` erzeugt); gesetzte Umgebungsvariablen haben Vorrang:
+`SPO_TOOL_DIR`, `SPO_CONFIG`, `SPO_OUTDIR`, `SPO_HOME`, `SPO_LOG` und
+`SPO_STATE_DIR` (nur von `loginwatch.sh` benutzt), dazu `SPO_ENV` für die Datei
+selbst und `SPO_LOCK` für die Lockdatei.
+
 Das Zeitfenster, in dem Spiele in den Kalender wandern, ergibt sich ohne weitere
-Angabe aus der Saison in der URL der jeweiligen Zeile. `SPO_SAISON_VORLAUF`,
-`SPO_SAISON_NACHLAUF`, `SPO_SAISON_KARENZ` und `SPO_SAISON_RANDABSTAND` stellen
-es und die Saisonerkennung ein, `SPO_ARCHIV_NACHFASSEN` den Abstand, in dem
-abgeschlossene Saisons überhaupt noch abgefragt werden, und `SPO_START`/`SPO_END`
-setzen das Fenster außer Kraft und geben eines für alle Zeilen vor. Einzelheiten unter
+Angabe aus der Saison in der URL der jeweiligen Zeile. Einstellen lässt es sich
+samt der Saisonerkennung über diese Variablen (z.B. in der crontab-Zeile vor
+dem Aufruf):
+
+| Variable | Vorgabe | Bedeutung |
+|---|---|---|
+| `SPO_SAISON_VORLAUF` | `1 month` | wie weit das Fenster vor den 1. Juli reicht |
+| `SPO_SAISON_NACHLAUF` | `1 month` | wie weit es über den 30. Juni hinausreicht |
+| `SPO_SAISON_KARENZ` | `21` (Tage) | Abstand nach dem letzten Spiel, ab dem die Saison als vermutlich beendet gilt |
+| `SPO_SAISON_RANDABSTAND` | `14` (Tage) | Abstand zum Fensterende, unter dem das Log vor einem zu engen Fenster warnt |
+| `SPO_SAISON_VORSAISON_FRIST` | `3 months` | wie lange nach Fensterbeginn ein leerer Spielplan als `VORSAISON` durchgeht statt als `LEER_UNERWARTET` |
+| `SPO_ARCHIV_NACHFASSEN` | `30 days` | Abstand, in dem abgeschlossene Saisons noch abgefragt werden |
+| `SPO_START` / `SPO_END` | — | festes Fenster für alle Zeilen; schaltet die Saisonlogik ab |
+
+Die Werte mit Einheit gehen an `date -d`, deshalb in dessen Schreibweise
+(`2 months`, `45 days`). Einzelheiten unter
 [Woran das Tool das Saisonende erkennt](#woran-das-tool-das-saisonende-erkennt--und-woran-nicht).
 
 Zwei Läufe gleichzeitig gibt es nicht: `update_all.sh` hält ein `flock` auf
@@ -260,7 +286,8 @@ base64-kodiert) über die Leitung.
 > Repo neu, jede von Hand oder von certbot ergänzte TLS-Konfiguration wäre
 > beim nächsten `git pull && sudo scripts/deploy.sh` wieder weg. Wer das
 > trotzdem will, pflegt den vhost ab dann selbst und rollt nur noch mit
-> `--no-nginx` aus.
+> `--no-nginx` aus — mit den Folgen, die unter
+> [Den vhost selbst pflegen](#den-vhost-selbst-pflegen---no-nginx) stehen.
 
 ### Zugang zum Formular
 
@@ -280,7 +307,8 @@ eigenen Dialog ab. Zusätzlich reicht der vhost den angemeldeten Namen als
 und zeigt einen Konfigurationsfehler an, statt ein offenes Formular
 auszuliefern. Wer den vhost selbst pflegt (`--no-nginx`) oder einen anderen
 Webserver benutzt, muss also beides einrichten — `auth_basic` **und** den
-`REMOTE_USER`-Parameter.
+`REMOTE_USER`-Parameter. Mit `--no-nginx` kommt die Rate-Limit-Zone dazu, siehe
+[Den vhost selbst pflegen](#den-vhost-selbst-pflegen---no-nginx).
 
 Zugangsdaten pflegt `set_password.sh` (die Datei liegt außerhalb des
 Web-Verzeichnisses und gehört `root:www-data`, Rechte `640`):
@@ -354,11 +382,25 @@ läuft die Platte voll. Gemeldet wird deshalb erst:
 
 | Auslöser | Vorgabe | Variable |
 |---|---|---|
-| Blocks (`429`) einer Adresse | ab 20 | `LOGINWATCH_BLOCKS` |
-| Fehllogins einer Adresse | ab 10 | `LOGINWATCH_AUTHFAILS` |
-| verschiedene Adressen gleichzeitig | ab 3 | `LOGINWATCH_IPS` |
-| Sendepause nach einer Meldung | 1 h, verdoppelt sich je Folgemeldung bis 24 h | `LOGINWATCH_COOLDOWN` |
-| Beobachtungsfenster | 24 h | `LOGINWATCH_WINDOW` |
+| Blocks (`429`) einer Adresse | ab `20` | `LOGINWATCH_BLOCKS` |
+| Fehllogins einer Adresse | ab `10` | `LOGINWATCH_AUTHFAILS` |
+| verschiedene Adressen gleichzeitig | ab `3` | `LOGINWATCH_IPS` |
+| Sendepause nach einer Meldung | `3600` s (1 h), verdoppelt sich je Folgemeldung | `LOGINWATCH_COOLDOWN` |
+| Obergrenze dieser Verdopplung | `86400` s (24 h) | `LOGINWATCH_COOLDOWN_MAX` |
+| Beobachtungsfenster | `86400` s (24 h) | `LOGINWATCH_WINDOW` |
+
+Die drei Zeitangaben sind **Sekunden** — `LOGINWATCH_COOLDOWN=2` wäre keine
+Pause von zwei Stunden, sondern praktisch keine.
+
+Dazu kommen Variablen, die nur braucht, wer vom Standardaufbau abweicht:
+
+| Variable | Vorgabe | Bedeutung |
+|---|---|---|
+| `LOGINWATCH_LOG` | `/var/log/nginx/error.log` | das ausgewertete nginx-Fehlerlog |
+| `LOGINWATCH_STATE` | `$SPO_STATE_DIR/loginwatch.state` | Zustandsdatei (Leseposition, Zähler) |
+| `LOGINWATCH_ZONE` | `fussballcal_login` | Name der Rate-Limit-Zone — muss zum vhost passen |
+| `LOGINWATCH_PATH` | `/add_team.php` | der geschützte Pfad — muss zum vhost passen |
+| `LOGINWATCH_MAX_IPS` | `5000` | Obergrenze einzeln verfolgter Adressen; was darüber liegt, wird nur noch gezählt |
 
 Während der Sendepause geht nichts verloren — es wird weitergezählt und kommt
 in der nächsten Meldung mit. Aus einem tagelangen Angriff werden so eine
@@ -458,12 +500,18 @@ Netz (`10.0.0.0/24`) statt als einzelne Adresse: Das überlebt einen
 Adresswechsel des Proxys, und eine Einzel-IP hieße, dass der Dienst nach so
 einem Wechsel niemandem mehr antwortet. Gesetzt bewirkt sie zweierlei:
 Anfragen von jeder anderen Gegenstelle beantwortet der vhost mit `403` — auch
-auf `/ics/` —, und die echten Client-Adressen werden aus `X-Forwarded-For`
+auf `/ics/`; ausgenommen ist nur der Rechner selbst, `127.0.0.1` und `::1`
+bleiben immer erlaubt —, und die echten Client-Adressen werden aus `X-Forwarded-For`
 übernommen, aber nur von dieser Herkunft. Ohne das zählte das Rate-Limit oben
 alle Besucher als einen einzigen (nginx sähe ja nur den Proxy), und ein
 einzelner Angreifer sperrte damit alle anderen aus. Ist die Variable nicht
 gesetzt, antwortet der vhost wie bisher jedem — `deploy.sh` weist am Ende
 darauf hin.
+
+Beide Variablen wirken nur, wenn `deploy.sh` nginx auch konfiguriert. Mit
+`--no-nginx` schreibt es weder die `listen`-Zeile noch die Proxy-Prüfung und
+gibt eine Warnung aus, wenn eine der beiden trotzdem gesetzt ist — siehe
+[Den vhost selbst pflegen](#den-vhost-selbst-pflegen---no-nginx).
 
 Beides ersetzt **keine Firewall**; es ist die Schicht darunter, falls der
 Rechner doch einmal direkt erreichbar ist. Die harte Grenze zieht die Firewall
@@ -484,6 +532,74 @@ auch dann nicht antwortet, wenn die beiden anderen einmal falsch stehen.
 
 Was sonst noch mehr bringt als jede Änderung an diesem Code: automatische
 Sicherheitsupdates für nginx und PHP (`unattended-upgrades`).
+
+### Den vhost selbst pflegen (`--no-nginx`)
+
+`--no-nginx` heißt: `deploy.sh` fasst die nginx-Konfiguration **gar nicht** an.
+Das ist mehr als der vhost — übersprungen wird alles Folgende, und jedes davon
+ist dann Handarbeit:
+
+| Was `deploy.sh` sonst erledigt | Mit `--no-nginx` |
+|---|---|
+| vhost nach `sites-available/` schreiben und aktivieren | selbst pflegen, Vorlage ist `nginx/fussballcal.conf` |
+| `/etc/nginx/conf.d/fussballcal.conf` erzeugen (Rate-Limit-Zone, Real-IP, Proxy-Prüfung) | selbst anlegen, siehe unten |
+| `LISTEN_ADDR` in die `listen`-Zeile schreiben | Variable ist **wirkungslos**; `listen` im eigenen vhost setzen |
+| `TRUSTED_PROXY` in die Proxy-Prüfung schreiben | Variable ist **wirkungslos**; Netz in der eigenen `conf.d`-Datei eintragen |
+| Debians Default-Site entfernen | selbst entfernen (siehe [Welcome-Page](#fehlersuche-es-erscheint-die-nginx-welcome-page)) |
+| `nginx -t` und Reload bzw. Neustart | selbst ausführen |
+
+Sind `LISTEN_ADDR` oder `TRUSTED_PROXY` bei einem Lauf mit `--no-nginx` gesetzt,
+schreibt `deploy.sh` am Ende eine `WARNUNG` — sonst sähe der Aufruf nach
+Absicherung aus, ohne eine zu sein. Die Passwortdatei
+`/etc/nginx/fussballcal.htpasswd` legt das Skript weiterhin an.
+
+Der vhost aus dem Repo benutzt zwei Dinge, die im `http`-Kontext stehen müssen
+und deshalb nicht im vhost selbst definiert sein können: die Zone
+`fussballcal_login` (`limit_req` am Formular) und die Variable
+`$fussballcal_untrusted_peer` (die `403`-Prüfung ganz oben). Fehlt eines davon,
+scheitert `nginx -t`. Eine Datei unter `/etc/nginx/conf.d/` liefert beides —
+hinter einem Reverse Proxy, das Netz an die eigene Umgebung angepasst:
+
+```nginx
+# /etc/nginx/conf.d/fussballcal.conf — http-Kontext für fussballcal
+
+# Bremse gegen Passwort-Raten am Formular.
+limit_req_zone $binary_remote_addr zone=fussballcal_login:10m rate=1r/s;
+
+# Echte Client-Adresse aus X-Forwarded-For übernehmen, aber nur vom Proxy.
+set_real_ip_from 10.0.0.0/24;
+real_ip_header X-Forwarded-For;
+
+# Alles außer dem Proxy und dem Rechner selbst weist der vhost mit 403 ab.
+geo $realip_remote_addr $fussballcal_untrusted_peer {
+    default      1;
+    10.0.0.0/24  0;
+    127.0.0.1    0;
+    ::1          0;
+}
+```
+
+Ohne Reverse Proxy (reiner Betrieb im eigenen Netz) entfallen die beiden
+`real_ip`-Zeilen, und der `geo`-Block lässt jeden durch:
+
+```nginx
+limit_req_zone $binary_remote_addr zone=fussballcal_login:10m rate=1r/s;
+
+geo $realip_remote_addr $fussballcal_untrusted_peer {
+    default 0;
+}
+```
+
+Drei Dinge dazu:
+
+- Der **Zonenname** muss `fussballcal_login` bleiben — oder `loginwatch.sh`
+  bekommt den anderen Namen per `LOGINWATCH_ZONE` mit. Sonst findet die
+  Auswertung der Fehlversuche keine Blocks mehr.
+- Hat ein früherer Rollout **ohne** `--no-nginx` die Datei schon erzeugt, bleibt
+  sie liegen und gilt weiter — sie wird nur nicht mehr aktualisiert. Ein
+  geändertes Proxy-Netz ist dann dort von Hand nachzutragen.
+- Wer `limit_req` und die `403`-Prüfung aus dem eigenen vhost streicht, braucht
+  die Datei nicht, verzichtet aber auf beide Schutzschichten.
 
 ### Fehlersuche: es erscheint die nginx-Welcome-Page
 
@@ -538,6 +654,13 @@ er enthält weder Saison noch team-id, und sein Kalender wandert von selbst in
 die neue Saison. Was zum Saisonwechsel zu tun ist, steht unter
 [Saisonwechsel](#5-saisonwechsel).
 
+Das Tool selbst erkennt die Saison **nur an `/saison/NNNN/` in der Adresse**.
+Ein Staffellink in der Form oben enthält das nicht: Er ist bei fussball.de
+saisongebunden, wird hier aber wie ein Vereinslink behandelt — rollierendes
+Abfragefenster, kein Saison-Abzeichen auf der Startseite, kein Archiv (siehe
+[Das Abfragefenster](#das-abfragefenster)). Sein Kalender hört zum Saisonende
+einfach auf, und der Eintrag muss von Hand ersetzt oder gelöscht werden.
+
 ### 2. Den Link eintragen
 
 Es gibt zwei Wege — beide schreiben in dieselbe Datei
@@ -548,7 +671,11 @@ Browser öffnen — der Browser fragt nach Benutzer und Passwort (siehe
 [Zugang zum Formular](#zugang-zum-formular)) —, Link und Kurznamen eintragen,
 absenden. Das Formular akzeptiert nur `https://www.fussball.de/`-Links und
 höchstens 200 Einträge in `teams.txt` (Obergrenze gegen Missbrauch, danach
-meldet es *„Maximale Anzahl an Teams erreicht"*). Von der öffentlichen
+meldet es *„Maximale Anzahl an Teams erreicht"*); gezählt werden nur echte
+`slug;url`-Zeilen, Kommentar- und Leerzeilen nicht. Den Kurznamen bringt das
+Formular selbst in Form: Großbuchstaben werden klein geschrieben, alle Zeichen
+außer `a-z`, `0-9`, `_` und `-` entfernt — aus `TSV Müller 1` wird `tsvmller1`.
+Abgelehnt wird er nur, wenn danach nichts übrig bleibt. Von der öffentlichen
 Startseite führt unten ein Link dorthin.
 
 **b) Direkt in der Datei** (z.B. für viele Teams auf einmal):
@@ -566,8 +693,9 @@ sv_beispiel_verein;https://www.fussball.de/verein/sv-beispiel/-/id/00ES...
 ```
 
 Der **slug** ist frei wählbar, darf aber nur `a-z`, `0-9`, `_` und `-`
-enthalten (Großbuchstaben und Umlaute werden abgelehnt) — er wird zum
-Dateinamen des Kalenders. `scripts/teams.txt.example` im Repo ist nur die
+enthalten — er wird zum Dateinamen des Kalenders. Anders als das Formular
+korrigiert hier niemand: Eine Zeile mit Großbuchstaben oder Umlauten im Slug
+überspringt `update_all.sh` mit einer Meldung im Log. `scripts/teams.txt.example` im Repo ist nur die
 Vorlage; die aktive Konfiguration liegt unter `/srv/spielplanoffline/`
 (überschreibbar per `SPO_CONFIG`).
 
@@ -626,8 +754,9 @@ Begründung protokolliert und übersprungen.
 siehe [Zugang zum Formular](#zugang-zum-formular)), in der Liste *Vorhandene
 Kalender* neben dem Eintrag auf *Löschen* klicken und die Rückfrage
 bestätigen. Das entfernt in einem Schritt die Zeile aus
-`/srv/spielplanoffline/teams.txt` **und** die Datei
-`/var/www/fussballcal/ics/<slug>.ics`. Kommentare und die übrigen Einträge in
+`/srv/spielplanoffline/teams.txt` **und** die Dateien
+`/var/www/fussballcal/ics/<slug>.ics` und `<slug>.state` (der Saisonstatus
+daneben). Kommentare und die übrigen Einträge in
 `teams.txt` bleiben unangetastet.
 
 Auf der öffentlichen Startseite (`index.php`) gibt es die Knöpfe bewusst
@@ -639,13 +768,14 @@ also hinter der Anmeldung.
 
 ```bash
 sudo nano /srv/spielplanoffline/teams.txt          # Zeile löschen
-sudo rm /var/www/fussballcal/ics/<slug>.ics
+sudo rm -f /var/www/fussballcal/ics/<slug>.ics /var/www/fussballcal/ics/<slug>.state
 ```
 
 Beide Schritte gehören zusammen: Wird nur die Zeile entfernt, bleibt die
 ICS-Datei liegen und nginx liefert sie unverändert weiter aus — der Kalender
 friert also ein, statt zu verschwinden. Genau deshalb macht das Formular
-beides auf einmal.
+beides auf einmal. Die `.state`-Datei wird nie ausgeliefert; sie mitzulöschen
+ist Aufräumen, damit kein Status ohne Kalender zurückbleibt.
 
 Ein Abo, das schon in einer Kalender-App eingerichtet ist, muss **dort**
 separat entfernt werden; nach dem Löschen auf dem Server liefert die URL nur
@@ -708,7 +838,7 @@ die ist nicht endgültig: nach dem letzten Ligaspieltag folgen Nachhol-,
 Relegations- und Pokalspiele, und ein verlegtes Spiel verschwindet zunächst ganz
 aus der Ausgabe, um später mit neuem Datum wieder aufzutauchen.
 
-Was das Tool deshalb tut: es unterscheidet vier Zustände pro Kalender und legt
+Was das Tool deshalb tut: es unterscheidet fünf Zustände pro Kalender und legt
 sie neben der `.ics` in einer `<slug>.state` ab. Die Startseite zeigt sie als
 Abzeichen, das Log schreibt sie im Klartext.
 
@@ -729,8 +859,10 @@ Bei `SAISONENDE_VERMUTLICH` und `KEINE_SPIELE_MEHR_ERWARTET` hängt das Tool
 zusätzlich einen **Ganztags-Termin an den Kalender** („Saison 25/26 ist beendet —
 neuen Kalender abonnieren"). Das ist der einzige Kanal, der bestehende Abos
 erreicht: die Abonnenten stehen nirgends. Kommen doch noch Spiele, verschwindet
-der Hinweis beim nächsten Lauf von selbst — die `.ics` wird jedes Mal neu
-erzeugt.
+der Hinweis beim nächsten Abruf von selbst — die `.ics` wird bei jedem Abruf neu
+erzeugt. Bei `SAISONENDE_VERMUTLICH` ist das der nächste Lauf, bei
+`KEINE_SPIELE_MEHR_ERWARTET` kann es bis zu `SPO_ARCHIV_NACHFASSEN` (30 Tage)
+dauern, siehe [Abgeschlossene Saisons ruhen](#abgeschlossene-saisons-ruhen).
 
 Eine leere Ausgabe wird **nie veröffentlicht**, aus keinem Grund. Die bestehende
 Datei ist der Spielplan der Saison; sie gegen einen leeren Kalender zu tauschen
@@ -857,8 +989,13 @@ SPO_SAISON_NACHLAUF="12 months"   # Saison 19/20 -> Fenster bis 2021-06-30
 Wer stattdessen ein festes Fenster für alle Zeilen will, setzt
 `SPO_START`/`SPO_END`; die schalten die Saisonlogik ganz ab.
 
-Zeilen ohne erkennbare Saison in der URL (Vereinslinks) behalten das alte
-rollierende Fenster (−2 Monate bis +12 Monate) und bekommen keinen Saisonstatus.
+Zeilen ohne `/saison/NNNN/` in der URL — Vereinslinks, aber auch Staffellinks
+ohne Saison im Pfad — behalten das alte rollierende Fenster (−2 Monate bis
++12 Monate). Sie bekommen kein Saison-Abzeichen, wandern nie ins Archiv und
+ruhen nie; für einen Vereinslink ist das richtig, einen solchen Staffellink
+muss man zum Saisonwechsel selbst im Blick behalten. Der Hinweis-Termin kommt
+auch bei ihnen, sobald kein Spiel mehr ansteht und das letzte länger als die
+Karenz zurückliegt — dann ohne Saisonangabe („Die Saison ist beendet").
 
 Die Klassifikation lässt sich ohne fussball.de prüfen:
 `scripts/selftest.sh` testet sie unter `[2] Saisonlogik` gegen synthetische
@@ -907,12 +1044,25 @@ Die ersten vier Punkte prüft der Selbsttest:
 sudo /srv/spielplanoffline/selftest.sh
 ```
 
+Kein Fehler ist dagegen `(?:?)` im Titel eines Spiels: Der vierte Vendor-Patch
+(`fussball2csv.awk`, „Ergebnis nur nach Anpfiff") übernimmt ein Ergebnis erst,
+wenn der Anpfiff vorbei ist und die OCR auf beiden Seiten eine Ziffer liest.
+Vorher lieferte fussball.de Platzhalter, aus denen von Lauf zu Lauf andere
+Scheinergebnisse wurden. Auch diesen Patch prüft der Selbsttest.
+
 **Auswirkung auf den veröffentlichten Kalender** — `update_all.sh` prüft jede
 frisch erzeugte `.ics`, bevor sie nach `/var/www/fussballcal/ics/` wandert
-(mindestens ein Termin, kein `DTSTART` im Jahr 0000, keine `[FEHLER?]`-Marken,
-gültiges UTF-8). Schlägt die Prüfung fehl, bleibt die bisherige Datei stehen —
-ein veralteter Kalender ist besser als einer voller Termine am 00.00.0000. Im
-Log erscheint dann `FEHLER: <slug>.ics verworfen`.
+(kein `DTSTART` im Jahr 0000, keine `[FEHLER?]`-Marken, gültiges UTF-8).
+Schlägt die Prüfung fehl, bleibt die bisherige Datei stehen — ein veralteter
+Kalender ist besser als einer voller Termine am 00.00.0000. Im Log erscheint
+dann `FEHLER: <slug>.ics verworfen`.
+
+Eine Ausgabe **ganz ohne Termine** gehört nicht mehr zu dieser Prüfung, sondern
+läuft über die Saisonlogik. Veröffentlicht wird sie in keinem Fall, aber das
+Log unterscheidet: Am Saisonanfang (`VORSAISON`) und nach abgelaufenem
+Saisonfenster (`KEINE_SPIELE_MEHR_ERWARTET`) steht dort ein `HINWEIS`, nur
+mitten in der Saison (`LEER_UNERWARTET`) ein `FEHLER` — siehe
+[Woran das Tool das Saisonende erkennt](#woran-das-tool-das-saisonende-erkennt--und-woran-nicht).
 
 Zwischenstände eines Laufs liegen unter `/srv/spielplanoffline/work/SpielplanOffline/tmp/`
 und helfen beim Eingrenzen:
@@ -1007,13 +1157,19 @@ Fehlerberichte und Pull Requests sind willkommen — besonders Anpassungen für
 andere Distributionen und Rückmeldungen, wenn fussball.de wieder etwas geändert
 hat. Zwei Bitten: Änderungen an `vendor/SpielplanOffline/` bleiben auf das
 Nötigste beschränkt und werden im Quelltext mit `LOKALER PATCH (fussballcal)`
-markiert, damit `scripts/selftest.sh` sie findet und ein Versionsupdate
-nachvollziehbar bleibt. Und wer am Rollout schraubt, prüft bitte, dass
+markiert, damit ein Versionsupdate nachvollziehbar bleibt. Der Selbsttest
+sucht nicht nach diesem Marker, sondern je Patch nach einer Zeichenfolge, die
+nur der gepatchte Code enthält — ein neuer Patch braucht deshalb eine eigene
+Prüfung in Abschnitt `[6]` von `scripts/selftest.sh` und einen Eintrag in
+`vendor/README.md`. Und wer am Rollout schraubt, prüft bitte, dass
 `deploy.sh` idempotent bleibt.
 
 ### Was die CI prüft
 
-Bei jedem Push und jedem Pull Request läuft `.github/workflows/ci.yml`. Das
+Bei jedem Push auf `main` und bei jedem Pull Request läuft
+`.github/workflows/ci.yml`; von Hand lässt sie sich über `workflow_dispatch`
+starten. Ein Push auf einen anderen Branch ohne Pull Request löst sie nicht
+aus. Das
 Projekt hat weder Composer noch ein Framework, entsprechend schlank ist die
 Prüfung — sie testet das, was es hier tatsächlich zu testen gibt:
 
@@ -1070,7 +1226,8 @@ weder von ihm unterstützt noch autorisiert. Dieser Hinweis steht zusammen mit
 einem Rückverweis auf dieses Repo auch in der Fußzeile der öffentlichen
 Startseite (`web/index.php`) — für Besucher, die nur diese Seite zu sehen
 bekommen. Es holt dieselben Seiten, die auch
-ein Browser lädt, alle sechs Stunden je eingetragener Mannschaft — der
+ein Browser lädt, alle sechs Stunden je eingetragener Mannschaft
+(abgeschlossene Saisons nur noch alle 30 Tage) — der
 sinnvolle Rahmen ist der eigene Verein bzw. die eigenen Kinder, nicht das
 systematische Absaugen ganzer Verbandsdatenbestände. Wer den Dienst für viele
 fremde Vereine öffentlich anbietet, klärt die Zulässigkeit besser vorher selbst
