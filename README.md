@@ -857,7 +857,8 @@ das Log, welcher der beiden Fälle vorliegt.
 
 Bei `SAISONENDE_VERMUTLICH` und `KEINE_SPIELE_MEHR_ERWARTET` hängt das Tool
 zusätzlich einen **Ganztags-Termin an den Kalender** („Saison 25/26 ist beendet —
-neuen Kalender abonnieren"). Das ist der einzige Kanal, der bestehende Abos
+neuen Kalender abonnieren") — nur bei Zeilen mit `/saison/NNNN/` in der URL,
+siehe [Das Abfragefenster](#das-abfragefenster). Das ist der einzige Kanal, der bestehende Abos
 erreicht: die Abonnenten stehen nirgends. Kommen doch noch Spiele, verschwindet
 der Hinweis beim nächsten Abruf von selbst — die `.ics` wird bei jedem Abruf neu
 erzeugt. Bei `SAISONENDE_VERMUTLICH` ist das der nächste Lauf, bei
@@ -993,9 +994,16 @@ Zeilen ohne `/saison/NNNN/` in der URL — Vereinslinks, aber auch Staffellinks
 ohne Saison im Pfad — behalten das alte rollierende Fenster (−2 Monate bis
 +12 Monate). Sie bekommen kein Saison-Abzeichen, wandern nie ins Archiv und
 ruhen nie; für einen Vereinslink ist das richtig, einen solchen Staffellink
-muss man zum Saisonwechsel selbst im Blick behalten. Der Hinweis-Termin kommt
-auch bei ihnen, sobald kein Spiel mehr ansteht und das letzte länger als die
-Karenz zurückliegt — dann ohne Saisonangabe („Die Saison ist beendet").
+muss man zum Saisonwechsel selbst im Blick behalten.
+
+Auch den Hinweis-Termin bekommen sie **nicht**. Ein Vereinslink in der
+Sommerpause sieht für das Tool aus wie ein Saisonende — kein Spiel steht an,
+das letzte liegt länger als die Karenz zurück, und weil das rollierende Fenster
+immer in der Zukunft endet, bleibt das den ganzen Sommer so. „Neuen Kalender
+abonnieren" wäre dort aber falsch: Der Kalender füllt sich von selbst wieder,
+sobald fussball.de die neuen Ansetzungen veröffentlicht. Im Log steht dann nur,
+dass kein Spiel ansteht. Für den Staffellink ohne Saison im Pfad heißt das: Sein
+Kalender hört zum Saisonende ohne Hinweis auf.
 
 Die Klassifikation lässt sich ohne fussball.de prüfen:
 `scripts/selftest.sh` testet sie unter `[2] Saisonlogik` gegen synthetische

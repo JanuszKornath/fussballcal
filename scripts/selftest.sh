@@ -157,6 +157,31 @@ else
         fi
     fi
 
+    # Ohne Saison in der URL gibt es keinen Hinweis-Termin. Der Fall ist der
+    # Vereinslink in der Sommerpause: rollierendes Fenster wie in update_all.sh
+    # (Ende immer in der Zukunft), letztes Spiel länger als die Karenz her, die
+    # neuen Ansetzungen noch nicht veröffentlicht. Der Status ist dann
+    # SAISONENDE_VERMUTLICH, aber "neuen Kalender abonnieren" wäre falsch – der
+    # Kalender läuft von selbst in die neue Saison weiter.
+    saison_aus_url 'https://www.fussball.de/verein/sv-beispiel/-/id/00ES1234' >/dev/null || true
+    FENSTER_START="$(date -d '20260711 -2 months' +%F)"
+    FENSTER_ENDE="$(date -d '20260711 +12 months' +%F)"
+    mach_ics "$TMP/verein.ics" 20260510 20260601
+    ics_kennzahlen "$TMP/verein.ics" 20260711
+    saison_status 20260711
+    pruef "Vereinslink in der Sommerpause: Status" "SAISONENDE_VERMUTLICH" "$STATUS"
+    cp "$TMP/verein.ics" "$TMP/verein.vorher"
+    if ergaenze_saisonhinweis "$TMP/verein.ics" "sv_beispiel"; then
+        bad "Vereinslink bekommt einen Hinweis-Termin, obwohl er nicht saisongebunden ist"
+    else
+        ok "Vereinslink bekommt keinen Hinweis-Termin (nicht saisongebunden)"
+    fi
+    if cmp -s "$TMP/verein.ics" "$TMP/verein.vorher"; then
+        ok "Kalender des Vereinslinks bleibt unverändert"
+    else
+        bad "Kalender des Vereinslinks wurde verändert"
+    fi
+
     # -- Laufende Spielnummer aus der DESCRIPTION entfernen
     printf 'DESCRIPTION:Kreisliga Musterkreis/Herren, 7. Spiel - Nr. 012345678, importiert mit SpielplanOffline(HF) \n' \
         >"$TMP/nummer.ics"
