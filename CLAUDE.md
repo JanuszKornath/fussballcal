@@ -16,6 +16,8 @@
 
 - Selbsttest:
   `SPO_ENV=/nonexistent SPO_TOOL_DIR="$PWD/vendor/SpielplanOffline" ./scripts/selftest.sh`
+  (braucht `gawk`, `tesseract-ocr`, `tesseract-ocr-deu`, `imagemagick`,
+  `fonts-dejavu-core`; ohne sie meldet der Selbsttest FEHLER)
 - ShellCheck: `LC_ALL=C.UTF-8 shellcheck -x scripts/*.sh`
   (`vendor/SpielplanOffline` ist Fremdcode und bleibt außen vor)
 - PHP-Syntax: `php -l` über `web/*.php`
